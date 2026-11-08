@@ -18,7 +18,7 @@
 
   <main class="wrap">
     <h1 data-i18n="auth.title">登入或註冊</h1>
-    <p class="lead" data-i18n="auth.lead">帳號只用來認領球拍。</p>
+    <p class="lead" data-i18n="auth.lead">帳號只用來認領球拍；勾「我是穿線師」才管得到穿線台。</p>
 
     <div class="seg">
       <button type="button" class="active" data-mode="login" data-i18n="auth.login">登入</button>
@@ -37,12 +37,38 @@
         <p class="hint" id="pwd-hint" hidden data-i18n="auth.passwordHint">密碼至少 6 位。</p>
       </div>
 
+      <div class="field" id="name-field" hidden>
+        <label for="display-name" data-i18n="auth.displayName">帳號名稱</label>
+        <input type="text" id="display-name" maxlength="40" data-i18n-ph="auth.displayNamePh" placeholder="例如 Andy" />
+        <p class="hint" data-i18n="auth.displayNameHint">客戶會看到這個名字（穿線記錄上）。</p>
+      </div>
+
+      <div id="stringer-block" hidden>
+        <label class="switch" for="is-stringer">
+          <input type="checkbox" id="is-stringer" />
+          <span data-i18n="auth.isStringer">我是穿線師</span>
+        </label>
+        <p class="hint" data-i18n="auth.isStringerHint">勾選後可以建球拍、記錄穿線；需要後台口令驗證。</p>
+
+        <div class="field" id="stringer-token-field" hidden>
+          <label for="stringer-token" data-i18n="auth.stringerToken">後台口令</label>
+          <input type="password" id="stringer-token" autocomplete="off" />
+          <p class="hint" data-i18n="auth.stringerTokenHint">只註冊時驗一次，之後登入不用再輸。</p>
+        </div>
+      </div>
+
       <button class="btn" type="submit" id="auth-btn" data-i18n="auth.btnLogin">登入</button>
       <div class="msg" id="auth-msg"></div>
     </form>
 
     <p class="foot" id="back-foot" hidden><a href="/" data-i18n="auth.back">← 回穿線台</a></p>
   </main>
+
+  <footer class="site-foot">
+    <div>Licensed © 2026 by Andy</div>
+    <div>Tel: <a href="tel:+85265586847">+852 65586847</a></div>
+  </footer>
+
 
   <script src="/i18n.js"></script>
   <script src="/client.js"></script>
@@ -54,6 +80,12 @@
     const emailEl = document.getElementById('email');
     const pwdEl = document.getElementById('password');
     const pwdHint = document.getElementById('pwd-hint');
+    const nameField = document.getElementById('name-field');
+    const nameEl = document.getElementById('display-name');
+    const stringerBlock = document.getElementById('stringer-block');
+    const stringerCheck = document.getElementById('is-stringer');
+    const stringerTokenField = document.getElementById('stringer-token-field');
+    const stringerToken = document.getElementById('stringer-token');
 
     // 認領流程會帶 next=/r/xxx，登入後回到那支球拍
     const next = new URLSearchParams(location.search).get('next');
@@ -67,8 +99,19 @@
         btn.textContent = mode === 'login' ? t('auth.btnLogin') : t('auth.btnRegister');
         pwdEl.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
         pwdHint.hidden = mode === 'login';
+        // 帳號名稱與穿線師選項只在註冊時出現
+        nameField.hidden = mode === 'login';
+        stringerBlock.hidden = mode === 'login';
+        if (mode === 'login') {
+          stringerCheck.checked = false;
+          stringerTokenField.hidden = true;
+        }
         hideMessage(msg);
       });
+    });
+
+    stringerCheck.addEventListener('change', () => {
+      stringerTokenField.hidden = !stringerCheck.checked;
     });
 
     form.addEventListener('submit', async (event) => {
@@ -81,14 +124,26 @@
       if (!password) return showMessage(msg, t('msg.needPassword'));
       if (mode === 'register' && password.length < 6) return showMessage(msg, t('msg.passwordShort'));
 
+      const wantsStringer = mode === 'register' && stringerCheck.checked;
+      if (wantsStringer && !stringerToken.value.trim()) {
+        return showMessage(msg, t('msg.needToken'));
+      }
+
       btn.disabled = true;
       const label = btn.textContent;
       btn.textContent = t('msg.wait');
 
       try {
+        const payload = { email, password };
+        if (mode === 'register') {
+          payload.display_name = nameEl.value.trim();
+          payload.is_stringer = wantsStringer;
+          if (wantsStringer) payload.admin_token = stringerToken.value.trim();
+        }
+
         const res = await api(`/api/auth/${mode === 'login' ? 'login' : 'register'}`, {
           method: 'POST',
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify(payload),
         });
 
         if (!res.ok) {

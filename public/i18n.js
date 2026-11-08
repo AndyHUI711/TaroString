@@ -22,6 +22,19 @@ const FEEDBACK_KEYS = [
 
 const DICT = {
   'zh-Hant': {
+    'admin.whoStringer': '以穿線師身分：{name}',
+    'admin.whoGuest': '還沒登入穿線師帳號。',
+    'admin.whoLogin': '登入 / 註冊',
+    'admin.needStringerAccount': '這一步要穿線師帳號：到登入頁勾「我是穿線師」再回來。',
+    'auth.displayName': '帳號名稱',
+    'auth.displayNamePh': '例如 Andy',
+    'auth.displayNameHint': '客戶會看到這個名字（穿線記錄上）。',
+    'auth.isStringer': '我是穿線師',
+    'auth.isStringerHint': '勾選後可以建球拍、記錄穿線；需要後台口令驗證。',
+    'auth.stringerToken': '後台口令',
+    'auth.stringerTokenHint': '只註冊時驗一次，之後登入不用再輸。',
+    'list.tokenAlt': '有穿線師帳號就直接登入，不用每次填口令。',
+    'job.by': '由 {name} 穿',
     'nav.list': '所有球拍',
 
     'admin.restringTitle': '為這支球拍重穿',
@@ -176,7 +189,7 @@ const DICT = {
     'adv.crossNote': '先到期的是橫線',
 
     'auth.title': '登入或註冊',
-    'auth.lead': '帳號只用來認領球拍、彙總自己的數據。記錄使用情況本來就不需要登入。',
+    'auth.lead': '帳號用來認領球拍、彙總自己的數據；勾「我是穿線師」才管得到穿線台。客戶記錄使用情況本來就不需要登入。',
     'auth.login': '登入',
     'auth.register': '註冊',
     'auth.btnLogin': '登入',
@@ -240,6 +253,9 @@ const DICT = {
     'msg.durationMax': '單次不能超過 24 小時',
 
     'err.TOKEN_INVALID': '後台口令錯誤',
+    'err.SCHEMA_OUTDATED': '資料庫還沒升級，先跑 migrations/003 與 004',
+    'err.QRCODE_FAILED': '二維碼生成失敗，連結仍然可用',
+    'err.UNAUTHORIZED': '要穿線師身分才能做這件事，先登入或填口令',
     'err.STRUNG_AT_INVALID': '穿線日期不合理（不能是未來，也不要早過 2005 年）',
     'err.RACKET_MODEL_REQUIRED': '球拍型號必須填寫',
     'err.MAIN_STRING_REQUIRED': '主（豎）線型號必須填寫',
@@ -266,6 +282,19 @@ const DICT = {
   },
 
   'zh-Hans': {
+    'admin.whoStringer': '以穿线师身份：{name}',
+    'admin.whoGuest': '还没登录穿线师账号。',
+    'admin.whoLogin': '登录 / 注册',
+    'admin.needStringerAccount': '这一步要穿线师账号：到登录页勾「我是穿线师」再回来。',
+    'auth.displayName': '账号名称',
+    'auth.displayNamePh': '例如 Andy',
+    'auth.displayNameHint': '客户会看到这个名字（穿线记录上）。',
+    'auth.isStringer': '我是穿线师',
+    'auth.isStringerHint': '勾选后可以建球拍、记录穿线；需要后台口令验证。',
+    'auth.stringerToken': '后台口令',
+    'auth.stringerTokenHint': '只注册时验一次，之后登录不用再输。',
+    'list.tokenAlt': '有穿线师账号就直接登录，不用每次填口令。',
+    'job.by': '由 {name} 穿',
     'nav.list': '所有球拍',
 
     'admin.restringTitle': '为这支球拍重穿',
@@ -420,7 +449,7 @@ const DICT = {
     'adv.crossNote': '先到期的是横线',
 
     'auth.title': '登录或注册',
-    'auth.lead': '账号只用来认领球拍、汇总自己的数据。记录使用情况本来就不需要登录。',
+    'auth.lead': '账号用来认领球拍、汇总自己的数据；勾「我是穿线师」才管得到穿线台。客户记录使用情况本来就不需要登录。',
     'auth.login': '登录',
     'auth.register': '注册',
     'auth.btnLogin': '登录',
@@ -484,6 +513,9 @@ const DICT = {
     'msg.durationMax': '单次不能超过 24 小时',
 
     'err.TOKEN_INVALID': '后台口令错误',
+    'err.SCHEMA_OUTDATED': '数据库还没升级，先跑 migrations/003 与 004',
+    'err.QRCODE_FAILED': '二维码生成失败，链接仍然可用',
+    'err.UNAUTHORIZED': '要穿线师身份才能做这件事，先登录或填口令',
     'err.STRUNG_AT_INVALID': '穿线日期不合理（不能是未来，也不要早过 2005 年）',
     'err.RACKET_MODEL_REQUIRED': '球拍型号必须填写',
     'err.MAIN_STRING_REQUIRED': '主（竖）线型号必须填写',
@@ -510,6 +542,19 @@ const DICT = {
   },
 
   en: {
+    'admin.whoStringer': 'Signed in as stringer: {name}',
+    'admin.whoGuest': 'Not signed in as a stringer.',
+    'admin.whoLogin': 'Sign in / register',
+    'admin.needStringerAccount': 'This needs a stringer account — register with “I’m a stringer” ticked, then come back.',
+    'auth.displayName': 'Display name',
+    'auth.displayNamePh': 'e.g. Andy',
+    'auth.displayNameHint': 'Customers see this name on the stringing records.',
+    'auth.isStringer': 'I am a stringer',
+    'auth.isStringerHint': 'Lets you create rackets and record stringings. Verified with the desk passcode.',
+    'auth.stringerToken': 'Desk passcode',
+    'auth.stringerTokenHint': 'Checked once at sign-up; you won\'t need it to log in.',
+    'list.tokenAlt': 'With a stringer account you just sign in — no passcode each time.',
+    'job.by': 'strung by {name}',
     'nav.list': 'All Rackets',
 
     'admin.restringTitle': 'Restring this racket',
@@ -664,7 +709,7 @@ const DICT = {
     'adv.crossNote': 'The crosses will wear out first',
 
     'auth.title': 'Sign in or register',
-    'auth.lead': 'An account is only for claiming rackets and seeing your totals. Logging usage never requires one.',
+    'auth.lead': 'An account is for claiming rackets and seeing your totals; tick “I am a stringer” to run the desk. Customers never need an account to log usage.',
     'auth.login': 'Sign in',
     'auth.register': 'Register',
     'auth.btnLogin': 'Sign in',
@@ -728,6 +773,9 @@ const DICT = {
     'msg.durationMax': 'A single session cannot exceed 24 hours',
 
     'err.TOKEN_INVALID': 'Wrong desk passcode',
+    'err.SCHEMA_OUTDATED': 'Database schema is out of date — run migrations/003 and 004 first',
+    'err.QRCODE_FAILED': 'Could not draw the QR code, but the link still works',
+    'err.UNAUTHORIZED': 'Stringer only — sign in or enter the passcode',
     'err.STRUNG_AT_INVALID': 'That stringing date looks off — not in the future, and not before 2005',
     'err.RACKET_MODEL_REQUIRED': 'Racket model is required',
     'err.MAIN_STRING_REQUIRED': 'Main string is required',

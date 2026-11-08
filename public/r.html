@@ -124,6 +124,12 @@
     <p class="foot" data-i18n="r.foot">資料保存在這支球拍的檔案裡</p>
   </main>
 
+  <footer class="site-foot">
+    <div>Licensed © 2026 by Andy</div>
+    <div>Tel: <a href="tel:+85265586847">+852 65586847</a></div>
+  </footer>
+
+
   <script src="/i18n.js"></script>
   <script src="/health.js"></script>
   <script src="/client.js"></script>
@@ -322,7 +328,7 @@
               <span class="item-side">${escapeHtml(fmtDateShort(job.strung_at))}</span>
             </div>
             <div class="item-meta">${escapeHtml(jobLine(job))}</div>
-            <div class="item-meta">${escapeHtml(job.log_count ? t('r.jobs.used', { h: fmtHours(job.total_hours), n: job.log_count }) : t('r.jobs.none'))}</div>
+            <div class="item-meta">${escapeHtml(job.log_count ? t('r.jobs.used', { h: fmtHours(job.total_hours), n: job.log_count }) : t('r.jobs.none'))}${job.stringer_name ? ` · ${escapeHtml(t('job.by', { name: job.stringer_name }))}` : ''}</div>
           </div>`;
       }).join('');
     }

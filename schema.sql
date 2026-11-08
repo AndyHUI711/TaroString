@@ -1,4 +1,4 @@
--- 穿线球拍记录 · D1 (SQLite) 表结构 · v3
+-- 穿线球拍记录 · D1 (SQLite) 表结构 · v4
 --
 -- v3 核心变化：把「球拍」和「穿线」拆成两层
 --   rackets      放长期不变的球拍信息与球拍码（uuid）。这个码贴在拍框上，重穿也不换。
@@ -13,11 +13,14 @@
 -- 若你已经建过 v1 / v2 的表，不要重跑本文件，执行对应迁移：
 --   v1 -> v2：migrations/002_hybrid_strings.sql
 --   v2 -> v3：migrations/003_string_jobs.sql
+--   v3 -> v4：migrations/004_stringer_accounts.sql
 
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   email         TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  display_name  TEXT,                 -- 账号名称（穿线师显示给客户看）
+  is_stringer   INTEGER NOT NULL DEFAULT 0,  -- 1 = 穿线师（注册时勾选 + 输入口令）
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
@@ -43,6 +46,8 @@ CREATE TABLE IF NOT EXISTS string_jobs (
   cross_model   TEXT,
   cross_tension REAL,
   strung_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  stringer_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  stringer_name TEXT,                 -- 当时穿的谁（快照，账号改名不影响历史）
   is_current    INTEGER NOT NULL DEFAULT 1,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );

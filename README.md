@@ -83,11 +83,11 @@ npx wrangler deploy
 **不用买。** Cloudflare 免费给 `workers.dev` 子子域，自带 HTTPS，这就是正式地址：
 
 ```
-https://taro-stringing.<账号子域>.workers.dev
+https://racket-logger.<账号子域>.workers.dev
 ```
 
 子域名可以在 Dashboard 里改成短名字（例如 `taro`），地址随之变成
-`https://taro-stringing.rackets.workers.dev` —— 字符越少，二维码越稀、越容易扫。
+`https://racket-logger.taro.workers.dev` —— 字符越少，二维码越稀、越容易扫。
 
 以后真要买域名（`.com` 约 US$10/年，Cloudflare Registrar 按成本价、续费不加价）再绑：
 
@@ -504,3 +504,106 @@ npx wrangler d1 execute racket-logger --remote --file=./migrations/003_string_jo
 - [x] `2027-01-01` → 400 `STRUNG_AT_INVALID`（不能是未来）
 - [x] `昨天` → 400 `STRUNG_AT_INVALID`（看不懂的日期）
 - [x] 順手修掉一個樣式 bug：`.notice` 的 `display` 蓋掉 `hidden`，導致重穿提示條在新建模式下也顯示 → 全域加 `[hidden] { display: none !important }`
+
+---
+
+## 十二、v4：穿線師改用帳號（不用每次輸口令）
+
+### 12.0 先講「無法生成二維碼」這件事
+
+本地從頭到尾都正常：直接打 `/api/qrcode` 拿到 `data:image/gif;base64,...`（272×272），用瀏覽器真的填完表單按下「產生 QR Code」，`#qr-img` 的 `src` 有 4800+ 字元、結果卡片正常展開。**線上壞掉，幾乎都不是前端算不出 QR，而是資料庫或部署版本不對。**
+
+最常見的兩種情況：
+
+1. **程式碼升級了，D1 沒跑遷移。** 舊的資料表沒有新欄位，幾乎每個接口都會在 SQL 上炸掉；v2 的時候只會回一句籠統的 `INTERNAL`，看起來就像「按了沒反應」。
+2. **Worker 還是舊版本沒重新部署。**
+
+這一版把這兩種情況都攤開來講清楚：
+
+- 新增自檢接口 `GET /api/diag`，只回布林值，不吐任何密鑰：
+
+```bash
+curl https://你的域名/api/diag
+```
+
+```json
+{"admin_token_configured":true,"session_secret_configured":true,
+ "rackets_table":true,"string_jobs_table":true,
+ "users_v4":true,"jobs_v4":true,"schema_version":4,"ok":true}
+```
+
+`schema_version` 對照：0 = 沒建表、2 = 缺 `string_jobs`（沒跑 003）、3 = 缺 `display_name`/`stringer_name`（沒跑 004）、4 = 最新。`ok: false` 就照著補。
+
+- 所有接口的最外層 catch 加了一條判斷：SQL 訊息裡出現 `no such table` / `no such column` → 回 `SCHEMA_OUTDATED`（帶 `hint: run_migrations` 與 `diag: /api/diag`），不再是無意義的「伺服器內部錯誤」。
+- `qrcodeHandler` 也包了 try/catch：真的算不出圖就回 `QRCODE_FAILED`，但**同時把 `scan_url` 一起回**，前端不會兩手空空。
+- 前端 `errText()` 已經認得這兩個錯誤碼，三語都有句子。
+
+> 部署後第一件事：打開 `https://你的域名/api/diag`，看到 `ok: true` 再開始用。
+
+### 12.1 穿線師：註冊時勾一次，之後用帳號
+
+以前每次建球拍、記錄穿線都要填後台口令，太煩。現在：
+
+- `/login` 註冊表單多了**「帳號名稱」**和**「我是穿線師」**勾選。
+- 勾了「我是穿線師」，下面才展開**後台口令**（只註冊時驗一次），口令對才給穿線權限；錯了回 401 `TOKEN_INVALID`，`hint: stringer_token`。
+- 註完自動登入，之後建球拍、記錄穿線、`/list` 都不用再摸口令。
+- 帳號名稱沒填的話，回落郵箱前綴（`andy@xx.com` → `andy`）；這個名字會寫進每一條穿線記錄給客戶看。
+
+後端判斷誰在操作的規則（`resolveStringer()`，建拍／記錄穿線／列出全部球拍三處共用）：
+
+1. 有登入會話且 `is_stringer = 1` → 用帳號，姓名取 `display_name`。
+2. 沒帳號但帶了正確 `admin_token` → 口令兜底（給還沒註冊的裝置用），名字固定「穿線師」。
+3. 都不滿足 → 401 `UNAUTHORIZED`，`hint: register_stringer`（前端會提示「先去登入頁勾我是穿線師」）。
+
+### 12.2 每一條穿線記錄都帶穿線師
+
+`string_jobs` 多了兩欄：
+
+- `stringer_id`：帳號 id（口令兜底時是 `NULL`）
+- `stringer_name`：當時的名字**快照**——之後你改帳號名稱，歷史記錄不會跟著變
+
+客戶掃碼頁的「這支拍穿過幾次」、`/list` 的展開明細，都會顯示「由 Andy 穿」。若要改舊資料的名字，直接 UPDATE `string_jobs.stringer_name` 就好。
+
+### 12.3 頁腳
+
+六個頁面（`/`、`/r`、`/list`、`/login`、`/my`、`/local`）底部統一加了：
+
+```
+Licensed © 2026 by Andy
+Tel: +852 65586847        ← 手機點一下直接撥號（tel: 連結）
+```
+
+改字就改各頁 `<footer class="site-foot">`，樣式在 `style.css` 的 `.site-foot`。
+
+### 12.4 升級步驟（重要）
+
+```bash
+# 1) 先跑遷移（003 若之前沒跑也要跑）
+npx wrangler d1 execute racket-logger --remote --file=./migrations/003_string_jobs.sql
+npx wrangler d1 execute racket-logger --remote --file=./migrations/004_stringer_accounts.sql
+
+# 2) 再部署
+npx wrangler deploy
+
+# 3) 驗收
+curl https://你的域名/api/diag
+```
+
+`004_stringer_accounts.sql` 只做兩件事：`users` 加 `display_name` / `is_stringer`，`string_jobs` 加 `stringer_id` / `stringer_name`。老帳號的名字是空的，前端會回落郵箱前綴；想要穿線權限，重新在 `/login` 勾一次「我是穿線師」把口令驗一遍即可（或直接用 `admin_token` 兜底）。
+
+> 注意：登入憑證（JWT）裡現在也帶了名字與身分。舊 cookie 還是能登入，但 `is_stringer` 是 false，重新登入一次就正常。
+
+### 12.5 這一版的驗收
+
+- [x] `GET /api/diag` → `schema_version: 4, ok: true`
+- [x] 註冊勾穿線師 + 錯口令 → 401 `TOKEN_INVALID` / `stringer_token`
+- [x] 註冊勾穿線師 + 對口令 → `is_stringer: true`，`/api/me` 回 `display_name: Andy`
+- [x] 普通客戶註冊 → `is_stringer: false`，之後建拍 401
+- [x] 只帶 cookie（完全不帶 `admin_token`）建拍 → 成功，記錄 `stringer_name: Andy`
+- [x] 匿名 / 普通客戶建拍 → 401 `UNAUTHORIZED` / `register_stringer`
+- [x] 口令兜底建拍 → 成功，`stringer_name: 穿線師`
+- [x] 同一支拍再用 cookie 穿一次 → 新 job 的 `stringer_name: Andy`，舊的保持原樣
+- [x] `/list` 帶 cookie 免口令，直接列出全部球拍
+- [x] 手動 DROP `string_jobs` 模擬「沒跑遷移」→ 接口回 `SCHEMA_OUTDATED`、`/api/diag` 指出 `schema_version: 2`
+- [x] 瀏覽器實測：登入穿線師 → 口令欄消失、頂部顯示「以穿線師身分：Andy」→ 填表 → QR 正常出圖
+- [x] 六頁頁腳渲染正常，電話連結可點

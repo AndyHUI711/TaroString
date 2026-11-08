@@ -22,6 +22,8 @@
     <h1 data-i18n="list.title">所有球拍</h1>
     <p class="lead" data-i18n="list.lead">這裡是穿線師的檔案室：每支拍穿過幾次、現在穿的什麼線。</p>
 
+    <div class="who-row" id="who-row" hidden></div>
+
     <section class="card" id="gate">
       <div class="field">
         <label for="admin-token" data-i18n="admin.token">後台口令</label>
@@ -29,6 +31,7 @@
         <p class="hint" data-i18n="admin.tokenHint">口令只保存在這台裝置上。</p>
       </div>
       <button class="btn" type="button" id="load-btn" data-i18n="list.load">載入</button>
+      <p class="hint" data-i18n="list.tokenAlt">有穿線師帳號就直接登入，不用每次填口令。</p>
       <div class="msg" id="gate-msg"></div>
     </section>
 
@@ -52,6 +55,12 @@
     <p class="foot" data-i18n="list.foot">點一支拍可以看到它的每一次穿線。</p>
   </main>
 
+  <footer class="site-foot">
+    <div>Licensed © 2026 by Andy</div>
+    <div>Tel: <a href="tel:+85265586847">+852 65586847</a></div>
+  </footer>
+
+
   <script src="/i18n.js"></script>
   <script src="/client.js"></script>
   <script>
@@ -70,6 +79,8 @@
     if (saved) tokenInput.value = saved;
 
     let data = { rackets: [], jobs_by_racket: {} };
+    let me = { logged_in: false, is_stringer: false };
+    const whoRow = document.getElementById('who-row');
 
     function jobLine(job) {
       if (job.cross_model) {
@@ -135,7 +146,7 @@
                   <span>${escapeHtml(fmtDateShort(job.strung_at))}${job.is_current ? ` · ${escapeHtml(t('r.jobs.current'))}` : ''}</span>
                 </div>
                 <div class="item-meta">${escapeHtml(jobLine(job))}</div>
-                <div class="item-meta">${escapeHtml(job.log_count ? t('r.jobs.used', { h: fmtHours(job.total_hours), n: job.log_count }) : t('r.jobs.none'))}</div>
+                <div class="item-meta">${escapeHtml(job.log_count ? t('r.jobs.used', { h: fmtHours(job.total_hours), n: job.log_count }) : t('r.jobs.none'))}${job.stringer_name ? ` · ${escapeHtml(t('job.by', { name: job.stringer_name }))}` : ''}</div>
               </div>`;
           }).join('');
         });
@@ -145,13 +156,15 @@
     async function loadAll() {
       hideMessage(gateMsg);
       const token = tokenInput.value.trim();
-      if (!token) return showMessage(gateMsg, t('msg.needToken'));
+      if (!me.is_stringer && !token) return showMessage(gateMsg, t('msg.needToken'));
 
       loadBtn.disabled = true;
       try {
+        const payload = {};
+        if (!me.is_stringer) payload.admin_token = token;
         const res = await api('/api/rackets/list', {
           method: 'POST',
-          body: JSON.stringify({ admin_token: token }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           if (res.status === 401) {
@@ -160,7 +173,7 @@
           }
           return showMessage(gateMsg, errText(res.data));
         }
-        sessionStorage.setItem(TOKEN_KEY, token);
+        if (!me.is_stringer) sessionStorage.setItem(TOKEN_KEY, token);
         data = res.data;
         gate.hidden = true;
         renderList();
@@ -176,8 +189,28 @@
       if (event.key === 'Enter') loadAll();
     });
 
-    // 存过口令就直接进
-    if (saved) loadAll();
+    /** 穿线师账号优先：登着就直接列，不问口令 */
+    async function boot() {
+      try {
+        const res = await api('/api/me');
+        me = res.data || me;
+      } catch { /* 忽略 */ }
+
+      whoRow.hidden = false;
+      if (me.is_stringer) {
+        whoRow.className = 'who-row ok';
+        whoRow.innerHTML = `${escapeHtml(t('admin.whoStringer', { name: me.display_name || me.email }))} <a class="link-btn" href="/">${escapeHtml(t('nav.desk'))}</a>`;
+        gate.hidden = true;
+        loadAll();
+      } else {
+        whoRow.className = 'who-row tip';
+        whoRow.innerHTML = `${escapeHtml(t('admin.whoGuest'))} <a class="link-btn" href="/login">${escapeHtml(t('admin.whoLogin'))}</a>`;
+        gate.hidden = false;
+        if (saved) loadAll();
+      }
+    }
+
+    boot();
   </script>
 </body>
 </html>

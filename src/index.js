@@ -153,7 +153,12 @@ function sessionSecret(env) {
 }
 
 async function issueSessionCookie(env, user, url) {
-  const token = await new SignJWT({ uid: user.id, email: user.email })
+  const token = await new SignJWT({
+    uid: user.id,
+    email: user.email,
+    name: user.display_name || null,
+    stringer: Boolean(user.is_stringer),
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_TTL_SECONDS}s`)
@@ -174,7 +179,12 @@ async function getSession(request, env) {
   try {
     const { payload } = await jwtVerify(token, sessionSecret(env));
     if (!payload || typeof payload.uid !== 'number') return null;
-    return { id: payload.uid, email: String(payload.email || '') };
+    return {
+      id: payload.uid,
+      email: String(payload.email || ''),
+      name: payload.name ? String(payload.name) : null,
+      is_stringer: Boolean(payload.stringer),
+    };
   } catch {
     return null;
   }
@@ -255,6 +265,7 @@ function mapJobRow(row) {
     cross_model: row.cross_model,
     cross_tension: row.cross_tension === null ? null : Number(row.cross_tension),
     strung_at: row.strung_at,
+    stringer_name: row.stringer_name || null,
     is_current: Boolean(row.is_current),
     total_hours: Number(row.total_hours) || 0,
     log_count: Number(row.log_count) || 0,
@@ -290,7 +301,7 @@ async function getJobs(env, racketId) {
   const result = await env.DB.prepare(
     `SELECT sj.id, sj.main_brand, sj.main_model, sj.main_tension,
             sj.cross_brand, sj.cross_model, sj.cross_tension,
-            sj.strung_at, sj.is_current,
+            sj.strung_at, sj.stringer_name, sj.is_current,
             COALESCE(SUM(l.duration_hours), 0) AS total_hours,
             COUNT(l.id) AS log_count
        FROM string_jobs sj
@@ -386,9 +397,27 @@ function readJobFields(body, defaultStrungAt) {
  * 接口
  * ------------------------------------------------------------------ */
 
-async function createRacket(request, env) {
-  if (!env.ADMIN_TOKEN) return fail('SERVER_MISCONFIGURED', 500, '服务器未配置 ADMIN_TOKEN');
+/**
+ * 谁在操作穿线台：
+ *   1. 登录用户且 is_stringer = 1 -> 用账号（会话 cookie，不用每次输口令）
+ *   2. 否则看有没有传 admin_token -> 老办法，兼容还没注册的装置
+ * 两者都不满足返回 null（调用方回 401 UNAUTHORIZED）。
+ */
+async function resolveStringer(request, env, body) {
+  const session = await getSession(request, env);
+  if (session && session.is_stringer) {
+    return {
+      id: session.id,
+      name: session.name || session.email.split('@')[0] || '穿線師',
+    };
+  }
+  if (env.ADMIN_TOKEN && constantTimeEqual(body?.admin_token ?? '', env.ADMIN_TOKEN)) {
+    return { id: null, name: '穿線師' };
+  }
+  return null;
+}
 
+async function createRacket(request, env) {
   let body;
   try {
     body = await request.json();
@@ -396,8 +425,11 @@ async function createRacket(request, env) {
     return fail('BAD_JSON', 400, '请求体必须是 JSON');
   }
 
-  if (!constantTimeEqual(body?.admin_token ?? '', env.ADMIN_TOKEN)) {
-    return fail('TOKEN_INVALID', 401, '后台口令错误');
+  const stringer = await resolveStringer(request, env, body);
+  if (!stringer) {
+    return fail('UNAUTHORIZED', 401, '请先以穿线师身份登录', {
+      hint: 'register_stringer',
+    });
   }
 
   const racketBrand = cleanText(body?.racket_brand, 40);
@@ -423,12 +455,14 @@ async function createRacket(request, env) {
   const v = job.values;
   const inserted = await env.DB.prepare(
     `INSERT INTO string_jobs (racket_id, main_brand, main_model, main_tension,
-                              cross_brand, cross_model, cross_tension, strung_at, is_current, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                              cross_brand, cross_model, cross_tension, strung_at,
+                              stringer_id, stringer_name, is_current, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
      RETURNING id`,
   )
     .bind(racket.id, v.mainBrand, v.mainModel, v.mainTension,
-          v.crossBrand, v.crossModel, v.crossTension, strungAt, createdAt)
+          v.crossBrand, v.crossModel, v.crossTension, strungAt,
+          stringer.id, stringer.name, createdAt)
     .first();
 
   return json({ uuid, job_id: inserted.id, job_index: 1, strung_at: strungAt });
@@ -439,7 +473,6 @@ async function createRacket(request, env) {
  * 穿线师扫上一次的码进来，填新线新磅数，走的就是这个接口。
  */
 async function createJob(request, env, uuid) {
-  if (!env.ADMIN_TOKEN) return fail('SERVER_MISCONFIGURED', 500, '服务器未配置 ADMIN_TOKEN');
   if (!UUID_RE.test(uuid)) return fail('RACKET_NOT_FOUND', 404, '球拍不存在');
 
   let body;
@@ -449,8 +482,11 @@ async function createJob(request, env, uuid) {
     return fail('BAD_JSON', 400, '请求体必须是 JSON');
   }
 
-  if (!constantTimeEqual(body?.admin_token ?? '', env.ADMIN_TOKEN)) {
-    return fail('TOKEN_INVALID', 401, '后台口令错误');
+  const stringer = await resolveStringer(request, env, body);
+  if (!stringer) {
+    return fail('UNAUTHORIZED', 401, '请先以穿线师身份登录', {
+      hint: 'register_stringer',
+    });
   }
 
   const racket = await getRacket(env, uuid);
@@ -482,12 +518,14 @@ async function createJob(request, env, uuid) {
 
   const inserted = await env.DB.prepare(
     `INSERT INTO string_jobs (racket_id, main_brand, main_model, main_tension,
-                              cross_brand, cross_model, cross_tension, strung_at, is_current, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                              cross_brand, cross_model, cross_tension, strung_at,
+                              stringer_id, stringer_name, is_current, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      RETURNING id`,
   )
     .bind(racket.racket_id, v.mainBrand, v.mainModel, v.mainTension,
-          v.crossBrand, v.crossModel, v.crossTension, strungAt, isBackdated ? 0 : 1, createdAt)
+          v.crossBrand, v.crossModel, v.crossTension, strungAt,
+          stringer.id, stringer.name, isBackdated ? 0 : 1, createdAt)
     .first();
 
   // 顺手允许修正球拍身份信息（扫旧码进来时型号可能写错过）
@@ -518,8 +556,6 @@ async function createJob(request, env, uuid) {
 
 /** 穿线师总览：所有球拍 + 每支的穿线历史 */
 async function listAllRackets(request, env) {
-  if (!env.ADMIN_TOKEN) return fail('SERVER_MISCONFIGURED', 500, '服务器未配置 ADMIN_TOKEN');
-
   let body = {};
   try {
     body = await request.json();
@@ -527,8 +563,11 @@ async function listAllRackets(request, env) {
     body = {};
   }
 
-  if (!constantTimeEqual(body?.admin_token ?? '', env.ADMIN_TOKEN)) {
-    return fail('TOKEN_INVALID', 401, '后台口令错误');
+  const stringer = await resolveStringer(request, env, body);
+  if (!stringer) {
+    return fail('UNAUTHORIZED', 401, '请先以穿线师身份登录', {
+      hint: 'register_stringer',
+    });
   }
 
   const limit = Math.min(Math.max(Number(body?.limit) || 100, 1), 300);
@@ -562,7 +601,8 @@ async function listAllRackets(request, env) {
   // 所有穿线一次取回，前端按 racket_id 分组（个人用量，几百条以内很快）
   const jobRows = await env.DB.prepare(
     `SELECT sj.racket_id, sj.id, sj.main_brand, sj.main_model, sj.main_tension,
-            sj.cross_brand, sj.cross_model, sj.cross_tension, sj.strung_at, sj.is_current,
+            sj.cross_brand, sj.cross_model, sj.cross_tension, sj.strung_at,
+            sj.stringer_name, sj.is_current,
             COALESCE(SUM(l.duration_hours), 0) AS total_hours,
             COUNT(l.id) AS log_count
        FROM string_jobs sj
@@ -768,14 +808,30 @@ async function register(request, env, url) {
   if (password.length < 6) return fail('PASSWORD_SHORT', 400, '密码至少 6 位');
   if (password.length > 72) return fail('PASSWORD_LONG', 400, '密码过长');
 
+  // 勾了「我是穿线师」就必须带对后台口令，否则谁都能给自己发穿线权限
+  const wantsStringer = Boolean(body?.is_stringer ?? body?.stringer);
+  if (wantsStringer) {
+    if (!env.ADMIN_TOKEN) return fail('SERVER_MISCONFIGURED', 500, '服务器未配置 ADMIN_TOKEN');
+    if (!constantTimeEqual(body?.admin_token ?? '', env.ADMIN_TOKEN)) {
+      return fail('TOKEN_INVALID', 401, '后台口令错误', { hint: 'stringer_token' });
+    }
+  }
+
+  const displayName = cleanText(
+    body?.display_name ?? body?.name,
+    40,
+  ) || email.split('@')[0];
+
   const passwordHash = await hashPassword(password);
 
   let inserted;
   try {
     inserted = await env.DB.prepare(
-      `INSERT INTO users (email, password_hash) VALUES (?, ?) RETURNING id, email`,
+      `INSERT INTO users (email, password_hash, display_name, is_stringer)
+       VALUES (?, ?, ?, ?)
+       RETURNING id, email, display_name, is_stringer`,
     )
-      .bind(email, passwordHash)
+      .bind(email, passwordHash, displayName, wantsStringer ? 1 : 0)
       .first();
   } catch (error) {
     if (String(error?.message || error).toUpperCase().includes('UNIQUE')) {
@@ -785,7 +841,12 @@ async function register(request, env, url) {
   }
 
   const cookie = await issueSessionCookie(env, inserted, url);
-  return json({ ok: true, email: inserted.email }, 201, { 'set-cookie': cookie });
+  return json({
+    ok: true,
+    email: inserted.email,
+    display_name: inserted.display_name,
+    is_stringer: Boolean(inserted.is_stringer),
+  }, 201, { 'set-cookie': cookie });
 }
 
 async function login(request, env, url) {
@@ -800,7 +861,9 @@ async function login(request, env, url) {
   const password = String(body?.password ?? '');
   if (!email || !password) return fail('CREDENTIALS_REQUIRED', 400, '邮箱和密码都必须填写');
 
-  const user = await env.DB.prepare(`SELECT id, email, password_hash FROM users WHERE email = ?`)
+  const user = await env.DB.prepare(
+    `SELECT id, email, password_hash, display_name, is_stringer FROM users WHERE email = ?`,
+  )
     .bind(email)
     .first();
 
@@ -811,13 +874,61 @@ async function login(request, env, url) {
   }
 
   const cookie = await issueSessionCookie(env, user, url);
-  return json({ ok: true, email: user.email }, 200, { 'set-cookie': cookie });
+  return json({
+    ok: true,
+    email: user.email,
+    display_name: user.display_name,
+    is_stringer: Boolean(user.is_stringer),
+  }, 200, { 'set-cookie': cookie });
 }
 
 async function whoAmI(request, env) {
   const session = await getSession(request, env);
-  if (!session) return json({ logged_in: false });
-  return json({ logged_in: true, email: session.email });
+  if (!session) return json({ logged_in: false, is_stringer: false });
+  return json({
+    logged_in: true,
+    email: session.email,
+    display_name: session.name || session.email.split('@')[0],
+    is_stringer: Boolean(session.is_stringer),
+  });
+}
+
+/**
+ * 自检：部署后打不开 / 保存失败时先看这里。
+ * 只暴露「配了没配」的布尔值，不泄露任何密钥内容。
+ */
+async function diagHandler(env) {
+  const checks = {
+    admin_token_configured: Boolean(env.ADMIN_TOKEN),
+    session_secret_configured: Boolean(env.SESSION_SECRET && env.SESSION_SECRET.length >= 16),
+    rackets_table: false,
+    string_jobs_table: false,
+    users_v4: false,
+    jobs_v4: false,
+    schema_version: null,
+  };
+
+  async function probe(sql) {
+    try {
+      await env.DB.prepare(sql).first();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  checks.rackets_table = await probe('SELECT uuid FROM rackets LIMIT 1');
+  checks.string_jobs_table = await probe('SELECT id FROM string_jobs LIMIT 1');
+  checks.users_v4 = await probe('SELECT display_name FROM users LIMIT 1');
+  checks.jobs_v4 = await probe('SELECT stringer_name FROM string_jobs LIMIT 1');
+
+  if (!checks.rackets_table) checks.schema_version = 0;
+  else if (!checks.string_jobs_table) checks.schema_version = 2;
+  else if (!checks.users_v4 || !checks.jobs_v4) checks.schema_version = 3;
+  else checks.schema_version = 4;
+
+  checks.ok = checks.schema_version === 4 && checks.session_secret_configured;
+  return json(checks);
 }
 
 async function qrcodeHandler(env, url) {
@@ -828,11 +939,21 @@ async function qrcodeHandler(env, url) {
   if (!racket) return fail('RACKET_NOT_FOUND', 404, '球拍不存在');
 
   const scanUrl = `${url.origin}/r/${uuid}`;
-  const qr = qrcode(0, 'M');
-  qr.addData(scanUrl);
-  qr.make();
 
-  return json({ uuid, scan_url: scanUrl, data_url: qr.createDataURL(8, 4) });
+  let dataUrl = '';
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(scanUrl);
+    qr.make();
+    dataUrl = qr.createDataURL(8, 4);
+  } catch (error) {
+    console.error('qrcode_error', error?.message || error);
+    return fail('QRCODE_FAILED', 500, '二维码生成失败', {
+      scan_url: scanUrl,
+    });
+  }
+
+  return json({ uuid, scan_url: scanUrl, data_url: dataUrl });
 }
 
 /* ------------------------------------------------------------------ *
@@ -844,6 +965,7 @@ async function handleApi(request, env, url) {
   const method = request.method;
 
   if (path === '/api/health') return json({ ok: true });
+  if (path === '/api/diag' && method === 'GET') return diagHandler(env);
   if (path === '/api/me' && method === 'GET') return whoAmI(request, env);
   if (path === '/api/qrcode' && method === 'GET') return qrcodeHandler(env, url);
   if (path === '/api/my' && method === 'GET') return listMyRackets(request, env);
@@ -899,7 +1021,17 @@ export default {
       try {
         return await handleApi(request, env, url);
       } catch (error) {
-        console.error('api_error', url.pathname, error?.stack || error);
+        const message = String(error?.message || error);
+        console.error('api_error', url.pathname, message);
+
+        // 最常见的一种「全部接口都挂」：代码升级了但迁移没跑
+        if (/no such table|no such column/i.test(message)) {
+          return fail('SCHEMA_OUTDATED', 500, '数据库结构还没升级，请先执行 migrations/003 与 004', {
+            hint: 'run_migrations',
+            diag: '/api/diag',
+          });
+        }
+
         return fail('INTERNAL', 500, '服务器内部错误');
       }
     }
