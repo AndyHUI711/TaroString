@@ -77,14 +77,13 @@ npx wrangler deploy
 
 ### 3.1 没有域名怎么办
 
-**不用买。** Cloudflare 免费给 `workers.dev` 子子域，自带 HTTPS，这就是正式地址：
+**不用买。** Cloudflare 免费给 `workers.dev` 子域，自带 HTTPS。当前正式地址是：
 
 ```
-https://racket-logger.<账号子域>.workers.dev
+https://taro-stringing.rackets.workers.dev
 ```
 
-子域名可以在 Dashboard 里改成短名字（例如 `taro`），地址随之变成
-`https://racket-logger.taro.workers.dev` —— 字符越少，二维码越稀、越容易扫。
+其中 `taro-stringing` 是 Worker 名称（由 `wrangler.toml` 的 `name` 设置），`rackets` 是账号的 `workers.dev` 子域。修改账号子域会同时改变该账号下其他 Worker 的 URL。
 
 以后真要买域名（`.com` 约 US$10/年，Cloudflare Registrar 按成本价、续费不加价）再绑：
 
