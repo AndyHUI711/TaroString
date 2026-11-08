@@ -11,6 +11,7 @@
   <div class="topbar">
     <a class="brand" href="/">TARO<span>·</span><span data-i18n="nav.desk">穿線台</span></a>
     <nav>
+      <a href="/list" data-i18n="nav.list">所有球拍</a>
       <a href="/local" data-i18n="nav.local">本機球拍</a>
       <a href="/my" data-i18n="nav.my">我的球拍</a>
       <a href="/login" data-i18n="nav.login">登入</a>
@@ -19,8 +20,19 @@
   </div>
 
   <main class="wrap">
-    <h1 data-i18n="admin.title">新穿一支拍子</h1>
-    <p class="lead" data-i18n="admin.lead">輸入球拍資訊，產生專屬 QR Code。</p>
+    <h1 id="page-title" data-i18n="admin.title">新穿一支拍子</h1>
+    <p class="lead" id="page-lead" data-i18n="admin.lead">輸入球拍資訊，產生專屬 QR Code。</p>
+
+    <div class="notice slim" id="restring-banner" hidden>
+      <span aria-hidden="true">↻</span>
+      <div>
+        <strong id="restring-name">—</strong>
+        <span id="restring-body" data-i18n="admin.restringBody">這支拍已經穿過幾次，填入新線就好；球拍碼不變，貼紙不用換。</span>
+        <div class="msg-row">
+          <a class="link-btn" href="/" data-i18n="admin.restringExit">改為新球拍</a>
+        </div>
+      </div>
+    </div>
 
     <form class="card" id="create-form" novalidate>
       <div class="field">
@@ -29,14 +41,20 @@
         <p class="hint" data-i18n="admin.tokenHint">口令只保存在這台裝置上。</p>
       </div>
 
-      <div class="field">
+      <div class="field" id="racket-brand-field">
         <label data-i18n="admin.brand">球拍品牌</label>
         <div id="racket-brand-host"></div>
       </div>
 
-      <div class="field">
+      <div class="field" id="racket-model-field">
         <label for="racket-model" data-i18n="admin.model">球拍型號</label>
         <input type="text" id="racket-model" data-i18n-ph="admin.modelPh" maxlength="80" />
+      </div>
+
+      <div class="field">
+        <label for="strung-date" data-i18n="admin.strungDate">穿線日期</label>
+        <input type="date" id="strung-date" />
+        <p class="hint" data-i18n="admin.strungDateHint">今天穿的就留預設；補記舊的可以往前選。</p>
       </div>
 
       <div class="section-head">
@@ -99,6 +117,10 @@
         <label data-i18n="admin.uuid">球拍編號（UUID）</label>
         <div class="mono" id="uuid-text"></div>
       </div>
+      <div class="field">
+        <label data-i18n="admin.jobLabel">這次穿線</label>
+        <div class="mono" id="job-text">—</div>
+      </div>
       <div class="btn-row">
         <button class="btn ghost small" type="button" id="copy-link" data-i18n="admin.copyLink">複製連結</button>
         <button class="btn ghost small" type="button" id="copy-uuid" data-i18n="admin.copyId">複製編號</button>
@@ -130,6 +152,36 @@
     const recentCard = document.getElementById('recent-card');
     const recentList = document.getElementById('recent-list');
     const copyMsg = document.getElementById('copy-msg');
+    const pageTitle = document.getElementById('page-title');
+    const pageLead = document.getElementById('page-lead');
+    const racketBrandField = document.getElementById('racket-brand-field');
+    const racketModelField = document.getElementById('racket-model-field');
+    const restringBanner = document.getElementById('restring-banner');
+    const restringName = document.getElementById('restring-name');
+    const jobText = document.getElementById('job-text');
+
+    // 穿线师扫上一次的码进来时，URL 上带 ?racket=<球拍碼>
+    const restringUuid = (new URLSearchParams(location.search).get('racket') || '').trim();
+    let restringRacket = null;
+
+    const strungDateInput = document.getElementById('strung-date');
+
+    /** 今天（本地时区）的 YYYY-MM-DD */
+    function todayLocal() {
+      const now = new Date();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      return `${now.getFullYear()}-${month}-${day}`;
+    }
+
+    /** 选中的日期 -> 当地中午的 ISO，避免时区把日子挪掉 */
+    function strungAtFromDate(value) {
+      if (!value) return undefined;
+      const [y, m, d] = value.split('-').map(Number);
+      return new Date(y, m - 1, d, 12, 0, 0).toISOString();
+    }
+
+    strungDateInput.value = todayLocal();
 
     attachDatalist('main-string', 'string-models', STRING_MODELS);
     attachDatalist('cross-string', 'string-models', STRING_MODELS);
@@ -189,6 +241,40 @@
       setTimeout(() => hideMessage(copyMsg), 2500);
     }
 
+    async function enterRestringMode(uuidValue) {
+      const res = await api(`/api/rackets/${encodeURIComponent(uuidValue)}`);
+      if (!res.ok) return;
+      restringRacket = res.data.racket;
+
+      pageTitle.textContent = t('admin.restringTitle');
+      pageLead.textContent = t('admin.restringLead');
+      btn.textContent = t('admin.restringSubmit');
+
+      restringBanner.hidden = false;
+      restringName.textContent = [restringRacket.racket_brand, restringRacket.racket_model].filter(Boolean).join(' ');
+
+      // 球拍身份不改，只填新線
+      racketBrandField.hidden = true;
+      racketModelField.hidden = true;
+
+      strungDateInput.value = todayLocal();
+
+      // 带出上一次的参数：改完确认就新增，不用重新打字
+      const r = restringRacket;
+      mainBrand.set(r.main_brand || '');
+      document.getElementById('main-string').value = r.main_model || '';
+      document.getElementById('main-tension').value = r.main_tension ?? '';
+
+      if (r.cross_model) {
+        hybridInput.checked = true;
+        crossBlock.hidden = false;
+        crossBrand.set(r.cross_brand || '');
+        document.getElementById('cross-string').value = r.cross_model;
+        document.getElementById('cross-tension').value = r.cross_tension ?? '';
+      }
+      showMessage(msg, t('admin.restringPrefilled'), 'ok');
+    }
+
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       hideMessage(msg);
@@ -202,7 +288,7 @@
       const crossTension = document.getElementById('cross-tension').value;
 
       if (!adminToken) return showMessage(msg, t('msg.needToken'));
-      if (!model) return showMessage(msg, t('msg.needModel'));
+      if (!restringRacket && !model) return showMessage(msg, t('msg.needModel'));
       if (!mainString) return showMessage(msg, t('msg.needMainString'));
       if (!mainTension) return showMessage(msg, t('msg.needMainTension'));
       if (isHybrid && !crossString) return showMessage(msg, t('msg.needCrossString'));
@@ -210,8 +296,6 @@
 
       const payload = {
         admin_token: adminToken,
-        racket_brand: racketBrand.get(),
-        racket_model: model,
         main_brand: mainBrand.get(),
         main_model: mainString,
         main_tension: Number(mainTension),
@@ -221,12 +305,22 @@
         payload.cross_model = crossString;
         payload.cross_tension = Number(crossTension);
       }
+      if (!restringRacket) {
+        payload.racket_brand = racketBrand.get();
+        payload.racket_model = model;
+      }
+
+      const strungAt = strungAtFromDate(strungDateInput.value);
+      if (strungAt) payload.strung_at = strungAt;
 
       btn.disabled = true;
       btn.textContent = t('admin.submitting');
 
       try {
-        const created = await api('/api/rackets', { method: 'POST', body: JSON.stringify(payload) });
+        const endpoint = restringRacket
+          ? `/api/rackets/${encodeURIComponent(restringUuid)}/jobs`
+          : '/api/rackets';
+        const created = await api(endpoint, { method: 'POST', body: JSON.stringify(payload) });
 
         if (!created.ok) {
           showMessage(msg, errText(created.data));
@@ -236,7 +330,10 @@
 
         sessionStorage.setItem(TOKEN_KEY, adminToken);
 
-        const label = isHybrid ? `${model} · ${mainString} / ${crossString}` : `${model} · ${mainString}`;
+        const modelName = restringRacket
+          ? [restringRacket.racket_brand, restringRacket.racket_model].filter(Boolean).join(' ')
+          : model;
+        const label = isHybrid ? `${modelName} · ${mainString} / ${crossString}` : `${modelName} · ${mainString}`;
         rememberRacket(created.data.uuid, label);
 
         const qr = await api(`/api/qrcode?uuid=${encodeURIComponent(created.data.uuid)}`);
@@ -251,7 +348,12 @@
         result.hidden = false;
         result.dataset.uuid = created.data.uuid;
         result.dataset.url = qr.data.scan_url;
-        showMessage(msg, t('msg.created'), 'ok');
+        jobText.textContent = t('admin.jobIndex', { n: created.data.job_index || 1 });
+        if (created.data.is_current === false) {
+          showMessage(msg, t('msg.backdated', { n: created.data.job_index }), 'ok');
+        } else {
+          showMessage(msg, restringRacket ? t('msg.restrung') : t('msg.created'), 'ok');
+        }
         renderRecent();
         result.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } catch (error) {
@@ -268,6 +370,7 @@
       if (result.dataset.url) window.open(result.dataset.url, '_blank');
     });
 
+    if (restringUuid) enterRestringMode(restringUuid);
     renderRecent();
   </script>
 </body>

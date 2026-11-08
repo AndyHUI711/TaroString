@@ -682,3 +682,67 @@ input[type="number"] { -webkit-appearance: none; appearance: textfield; }
 @media (max-width: 420px) {
   .adv-next { font-size: 15.5px; }
 }
+
+/* 球拍 / 穿線兩層：重穿入口與穿線歷史 */
+.restring-btn { margin-top: 4px; width: auto; align-self: flex-start; }
+
+.jobs { display: flex; flex-direction: column; gap: 10px; }
+
+.job-item.current {
+  border-color: var(--accent-soft, #d9c9b4);
+  background: #fffdf9;
+}
+
+.item-side.badge-soft { font-size: 12px; color: var(--ink-soft); }
+
+.racket-item { display: block; }
+.racket-item summary {
+  display: block;
+  cursor: pointer;
+  list-style: none;
+}
+.racket-item summary::-webkit-details-marker { display: none; }
+
+.racket-item[open] { border-color: var(--accent-soft, #d9c9b4); }
+
+.detail {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #e6e0d8;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.job-line { font-size: 13px; }
+.job-line.current { background: #faf6ef; border-radius: 10px; padding: 8px 10px; }
+
+.job-line-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-bottom: 3px;
+}
+.job-line-head strong { color: var(--ink); }
+
+.tiny-code {
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: #a49a8c;
+  word-break: break-all;
+}
+
+.msg-row { margin-top: 6px; }
+
+.chev {
+  display: inline-block;
+  margin-left: 2px;
+  transition: transform 0.15s ease;
+  color: var(--ink-soft);
+}
+.racket-item[open] .chev { transform: rotate(180deg); }
+
+/* hidden 属性优先：.notice / .stat-strip 等带 display 的类会盖掉它 */
+[hidden] { display: none !important; }

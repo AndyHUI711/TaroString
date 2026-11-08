@@ -53,7 +53,9 @@
           <dt data-i18n="r.label.cross" id="dt-cross" hidden>橫線</dt>
           <dd id="k-cross" hidden>—</dd>
           <dt data-i18n="r.label.strung">穿線時間</dt><dd id="k-strung">—</dd>
+          <dt data-i18n="r.label.job">第幾次</dt><dd id="k-job">—</dd>
         </dl>
+        <button class="btn ghost small restring-btn" type="button" id="restring-btn" hidden data-i18n="r.restring">再穿一次</button>
         <div class="owner-row">
           <span id="k-owner">—</span>
           <button class="link-btn" type="button" id="claim-btn" data-i18n="r.claim.btnLogin">登入並認領</button>
@@ -83,6 +85,11 @@
         <h2><span data-i18n="r.logs.title">使用記錄</span></h2>
         <div class="list" id="log-list"></div>
         <div class="empty" id="log-empty" data-i18n="r.logs.empty">還沒有記錄。</div>
+      </section>
+
+      <section class="card" id="jobs-card" hidden>
+        <h2 data-i18n="r.jobs.title">這支拍穿過幾次</h2>
+        <div class="jobs" id="job-list"></div>
       </section>
 
       <section class="card" id="advice-card" hidden>
@@ -207,7 +214,10 @@
     }
 
     function renderAdvice(data) {
-      const advice = evaluateAdvice(data.racket, data.logs || []);
+      // 只看「现在拍上这一根线」的记录：换了线，旧的用量不该算到新线头上
+      const currentId = data.current_job_id;
+      const logs = (data.logs || []).filter((log) => log.string_job_id === null || log.string_job_id === currentId);
+      const advice = evaluateAdvice(data.racket, logs);
       adviceCard.hidden = false;
 
       if (!advice.enoughData) {
@@ -246,6 +256,10 @@
         .join('');
     }
 
+    // 穿线序号：job 越旧序号越小，换过线之后旧的记录要看得出是哪一根
+    let jobSeq = {};
+    let currentJobSeqNum = 1;
+
     function renderLogs(logs) {
       const total = logs.reduce((sum, log) => sum + Number(log.duration_hours || 0), 0);
       statHoursEl.textContent = fmtHours(total);
@@ -261,13 +275,54 @@
         const temp = log.temperature_c === null || log.temperature_c === undefined
           ? ''
           : ` · ${Number(log.temperature_c).toFixed(1)}°C`;
+        const seq = log.string_job_id ? jobSeq[log.string_job_id] : null;
+        const oldTag = seq && seq !== currentJobSeqNum
+          ? ` <span class="badge wait">${escapeHtml(t('r.jobIndex', { n: seq }))}</span>`
+          : '';
         return `
           <div class="log">
             <div class="log-head">
-              <span class="log-hours">${fmtHours(log.duration_hours)}</span>
+              <span class="log-hours">${fmtHours(log.duration_hours)}${oldTag}</span>
               <span>${fmtDate(log.logged_at)}${temp}</span>
             </div>
             ${feedbackChips(log.feedback)}
+          </div>`;
+      }).join('');
+    }
+
+    const jobsCard = document.getElementById('jobs-card');
+    const jobList = document.getElementById('job-list');
+    const restringBtn = document.getElementById('restring-btn');
+
+    function jobLine(job) {
+      if (job.cross_model) {
+        return `${lineText({ brand: job.main_brand, model: job.main_model, tension: job.main_tension })} / ${lineText({ brand: job.cross_brand, model: job.cross_model, tension: job.cross_tension })}`;
+      }
+      return lineText({ brand: job.main_brand, model: job.main_model, tension: job.main_tension });
+    }
+
+    function renderJobs(data) {
+      const jobs = data.jobs || [];
+      jobSeq = {};
+      jobs.forEach((job, index) => { jobSeq[job.id] = jobs.length - index; });
+      currentJobSeqNum = jobs.length;
+      document.getElementById('k-job').textContent = jobs.length
+        ? t('r.jobIndex', { n: jobs.length })
+        : '—';
+
+      if (jobs.length <= 1) { jobsCard.hidden = true; return; }
+      jobsCard.hidden = false;
+
+      jobList.innerHTML = jobs.map((job, index) => {
+        const seq = jobs.length - index;
+        return `
+          <div class="item job-item${job.is_current ? ' current' : ''}">
+            <div class="item-title">
+              <strong>${escapeHtml(t('r.jobIndex', { n: seq }))}${job.is_current ? ` <span class="badge ok">${escapeHtml(t('r.jobs.current'))}</span>` : ''}</strong>
+              <span class="item-side">${escapeHtml(fmtDateShort(job.strung_at))}</span>
+            </div>
+            <div class="item-meta">${escapeHtml(jobLine(job))}</div>
+            <div class="item-meta">${escapeHtml(job.log_count ? t('r.jobs.used', { h: fmtHours(job.total_hours), n: job.log_count }) : t('r.jobs.none'))}</div>
           </div>`;
       }).join('');
     }
@@ -290,7 +345,8 @@
         ? lineText({ brand: r.cross_brand, model: r.cross_model, tension: r.cross_tension })
         : '';
 
-      document.getElementById('k-strung').textContent = fmtDate(r.strung_at);
+      // 穿线日期可能被回填，只显示日期不显示几点
+      document.getElementById('k-strung').textContent = fmtDateShort(r.strung_at);
 
       const ownerEl = document.getElementById('k-owner');
       if (r.claimed) {
@@ -303,8 +359,15 @@
       claimBtn.hidden = Boolean(r.claimed);
       claimBtn.textContent = me.logged_in ? t('r.claim.btn') : t('r.claim.btnLogin');
 
+      renderJobs(data);
       renderLogs(data.logs || []);
       renderAdvice(data);
+
+      // 穿线师这台装置存过口令，才显示「再穿一次」，客户看不到
+      if (sessionStorage.getItem('rl_admin_token')) {
+        restringBtn.hidden = false;
+        restringBtn.onclick = () => { location.href = `/?racket=${encodeURIComponent(r.uuid)}`; };
+      }
 
       // 扫过一次就记在浏览器里，之后从「本機球拍」直接进来
       rememberRacket(r.uuid, [r.racket_brand, r.racket_model].filter(Boolean).join(' '));
@@ -386,6 +449,7 @@
         const refreshed = await api(`/api/rackets/${encodeURIComponent(uuid)}`);
         if (refreshed.ok) {
           current = refreshed.data;
+          renderJobs(refreshed.data);
           renderLogs(refreshed.data.logs || []);
           renderAdvice(refreshed.data);
         }

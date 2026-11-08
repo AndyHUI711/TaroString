@@ -217,16 +217,21 @@ async function fetchTemperature(latitude, longitude) {
  * 数据访问
  * ------------------------------------------------------------------ */
 
-const RACKET_COLUMNS = `r.uuid, r.racket_brand, r.racket_model,
-                        r.main_brand, r.main_model, r.main_tension,
-                        r.cross_brand, r.cross_model, r.cross_tension,
-                        r.strung_at, r.owner_id, r.claimed_at`;
+// 球拍 + 现在拍上那一根线（is_current = 1）。旧字段名保持平铺，前端不用大改。
+const RACKET_COLUMNS = `r.id AS racket_id, r.uuid, r.racket_brand, r.racket_model,
+                        r.owner_id, r.claimed_at, r.created_at,
+                        j.id AS job_id, j.main_brand, j.main_model, j.main_tension,
+                        j.cross_brand, j.cross_model, j.cross_tension, j.strung_at`;
+
+const RACKET_FROM = `FROM rackets r
+       LEFT JOIN string_jobs j ON j.racket_id = r.id AND j.is_current = 1`;
 
 function mapRacketRow(row) {
   return {
     uuid: row.uuid,
     racket_brand: row.racket_brand,
     racket_model: row.racket_model,
+    job_id: row.job_id,
     main_brand: row.main_brand,
     main_model: row.main_model,
     main_tension: row.main_tension === null ? null : Number(row.main_tension),
@@ -236,13 +241,30 @@ function mapRacketRow(row) {
     strung_at: row.strung_at,
     claimed: Boolean(row.owner_id),
     claimed_at: row.claimed_at,
+    created_at: row.created_at,
+  };
+}
+
+function mapJobRow(row) {
+  return {
+    id: row.id,
+    main_brand: row.main_brand,
+    main_model: row.main_model,
+    main_tension: row.main_tension === null ? null : Number(row.main_tension),
+    cross_brand: row.cross_brand,
+    cross_model: row.cross_model,
+    cross_tension: row.cross_tension === null ? null : Number(row.cross_tension),
+    strung_at: row.strung_at,
+    is_current: Boolean(row.is_current),
+    total_hours: Number(row.total_hours) || 0,
+    log_count: Number(row.log_count) || 0,
   };
 }
 
 async function getRacket(env, uuid) {
   return env.DB.prepare(
     `SELECT ${RACKET_COLUMNS}, u.email AS owner_email_raw
-       FROM rackets r
+       ${RACKET_FROM}
        LEFT JOIN users u ON u.id = r.owner_id
       WHERE r.uuid = ?`,
   )
@@ -252,7 +274,7 @@ async function getRacket(env, uuid) {
 
 async function getLogs(env, uuid) {
   const result = await env.DB.prepare(
-    `SELECT duration_hours, feedback, temperature_c, logged_at
+    `SELECT duration_hours, feedback, temperature_c, logged_at, string_job_id
        FROM usage_logs
       WHERE racket_uuid = ?
       ORDER BY logged_at DESC, id DESC
@@ -261,6 +283,103 @@ async function getLogs(env, uuid) {
     .bind(uuid)
     .all();
   return result.results || [];
+}
+
+/** 这支拍的所有穿线，按时间倒序，带每次的累计用量 */
+async function getJobs(env, racketId) {
+  const result = await env.DB.prepare(
+    `SELECT sj.id, sj.main_brand, sj.main_model, sj.main_tension,
+            sj.cross_brand, sj.cross_model, sj.cross_tension,
+            sj.strung_at, sj.is_current,
+            COALESCE(SUM(l.duration_hours), 0) AS total_hours,
+            COUNT(l.id) AS log_count
+       FROM string_jobs sj
+       LEFT JOIN usage_logs l ON l.string_job_id = sj.id
+      WHERE sj.racket_id = ?
+      GROUP BY sj.id
+      ORDER BY sj.strung_at DESC, sj.id DESC`,
+  )
+    .bind(racketId)
+    .all();
+  return (result.results || []).map(mapJobRow);
+}
+
+/** 当前拍上这一根线（新记录要挂到它上面） */
+async function getCurrentJob(env, racketId) {
+  return env.DB.prepare(
+    `SELECT id FROM string_jobs WHERE racket_id = ? AND is_current = 1 LIMIT 1`,
+  )
+    .bind(racketId)
+    .first();
+}
+
+/**
+ * 穿线日期允许回填。
+ *  - 不传 -> 用现在
+ *  - "YYYY-MM-DD" -> 存当天香港正午（04:00Z），避免时区把日期推到前一天/后一天
+ *  - 完整 ISO -> 原样用
+ * 只挡明显不合理的：2005 年以前、或未来一天以后。
+ */
+function parseStrungAt(value, fallback) {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+
+  const raw = String(value).trim();
+  let ms;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    ms = Date.parse(`${raw}T04:00:00.000Z`);
+  } else {
+    ms = Date.parse(raw);
+  }
+
+  if (!Number.isFinite(ms)) return { code: 'STRUNG_AT_INVALID', message: '穿线日期看不懂' };
+
+  const earliest = Date.parse('2005-01-01T00:00:00.000Z');
+  if (ms < earliest) return { code: 'STRUNG_AT_INVALID', message: '穿线日期太早了' };
+  if (ms > Date.now() + 36 * 60 * 60 * 1000) {
+    return { code: 'STRUNG_AT_INVALID', message: '穿线日期不能是未来' };
+  }
+
+  return new Date(ms).toISOString();
+}
+
+/** 线参数校验：新建球拍与「再穿一次」共用 */
+function readJobFields(body, defaultStrungAt) {
+  const mainBrand = cleanText(body?.main_brand, 40);
+  const mainModel = cleanText(body?.main_model ?? body?.string_model, 80);
+  const mainTension = parseTension(body?.main_tension ?? body?.tension);
+  const crossBrand = cleanText(body?.cross_brand, 40);
+  const crossModel = cleanText(body?.cross_model, 80);
+  const crossTension = parseTension(body?.cross_tension);
+  const isHybrid = Boolean(crossModel || crossTension !== null);
+
+  if (!mainModel) return { code: 'MAIN_STRING_REQUIRED', message: '主（竖）线型号必须填写' };
+  if (mainTension === null) return { code: 'MAIN_TENSION_REQUIRED', message: '主（竖）线磅数必须填写' };
+  if (!Number.isFinite(mainTension) || mainTension <= 0 || mainTension > MAX_TENSION) {
+    return { code: 'MAIN_TENSION_INVALID', message: `主（竖）线磅数必须是 0-${MAX_TENSION} 之间的数字` };
+  }
+  if (isHybrid) {
+    if (!crossModel) return { code: 'CROSS_STRING_REQUIRED', message: '子母线需要填写横线型号' };
+    if (crossTension === null) return { code: 'CROSS_TENSION_REQUIRED', message: '子母线需要填写横线磅数' };
+    if (!Number.isFinite(crossTension) || crossTension <= 0 || crossTension > MAX_TENSION) {
+      return { code: 'CROSS_TENSION_INVALID', message: `横线磅数必须是 0-${MAX_TENSION} 之间的数字` };
+    }
+  }
+
+  const strungAt = parseStrungAt(body?.strung_at, defaultStrungAt ?? now());
+  if (typeof strungAt === 'object' && strungAt?.code) return strungAt;
+
+  return {
+    values: {
+      strungAt,
+      mainBrand,
+      mainModel,
+      mainTension,
+      crossBrand: isHybrid ? crossBrand : null,
+      crossModel: isHybrid ? crossModel : null,
+      crossTension: isHybrid ? crossTension : null,
+    },
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -281,54 +400,190 @@ async function createRacket(request, env) {
     return fail('TOKEN_INVALID', 401, '后台口令错误');
   }
 
-  // 兼容旧字段名（string_model / tension 视为主线）
   const racketBrand = cleanText(body?.racket_brand, 40);
   const racketModel = cleanText(body?.racket_model, 80);
-  const mainBrand = cleanText(body?.main_brand, 40);
-  const mainModel = cleanText(body?.main_model ?? body?.string_model, 80);
-  const mainTension = parseTension(body?.main_tension ?? body?.tension);
-
-  const crossBrand = cleanText(body?.cross_brand, 40);
-  const crossModel = cleanText(body?.cross_model, 80);
-  const crossTension = parseTension(body?.cross_tension);
-  const isHybrid = Boolean(crossModel || crossTension !== null);
-
   if (!racketModel) return fail('RACKET_MODEL_REQUIRED', 400, '球拍型号必须填写');
-  if (!mainModel) return fail('MAIN_STRING_REQUIRED', 400, '主（竖）线型号必须填写');
-  if (mainTension === null) return fail('MAIN_TENSION_REQUIRED', 400, '主（竖）线磅数必须填写');
-  if (!Number.isFinite(mainTension) || mainTension <= 0 || mainTension > MAX_TENSION) {
-    return fail('MAIN_TENSION_INVALID', 400, `主（竖）线磅数必须是 0-${MAX_TENSION} 之间的数字`);
-  }
 
-  if (isHybrid) {
-    if (!crossModel) return fail('CROSS_STRING_REQUIRED', 400, '子母线需要填写横线型号');
-    if (crossTension === null) return fail('CROSS_TENSION_REQUIRED', 400, '子母线需要填写横线磅数');
-    if (!Number.isFinite(crossTension) || crossTension <= 0 || crossTension > MAX_TENSION) {
-      return fail('CROSS_TENSION_INVALID', 400, `横线磅数必须是 0-${MAX_TENSION} 之间的数字`);
-    }
-  }
+  const job = readJobFields(body);
+  if (!job.values) return fail(job.code, 400, job.message);
 
+  // 球拍码（永久）与穿线 id（每次一条）在这里同时产生
   const uuid = crypto.randomUUID();
-  await env.DB.prepare(
-    `INSERT INTO rackets (uuid, racket_brand, racket_model,
-                          main_brand, main_model, main_tension,
-                          cross_brand, cross_model, cross_tension)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
-      uuid,
-      racketBrand,
-      racketModel,
-      mainBrand,
-      mainModel,
-      mainTension,
-      isHybrid ? crossBrand : null,
-      isHybrid ? crossModel : null,
-      isHybrid ? crossTension : null,
-    )
-    .run();
+  const strungAt = job.values.strungAt;
+  const createdAt = now();
 
-  return json({ uuid, strung_at: now() });
+  const racket = await env.DB.prepare(
+    `INSERT INTO rackets (uuid, racket_brand, racket_model, created_at)
+     VALUES (?, ?, ?, ?)
+     RETURNING id`,
+  )
+    .bind(uuid, racketBrand, racketModel, createdAt)
+    .first();
+
+  const v = job.values;
+  const inserted = await env.DB.prepare(
+    `INSERT INTO string_jobs (racket_id, main_brand, main_model, main_tension,
+                              cross_brand, cross_model, cross_tension, strung_at, is_current, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+     RETURNING id`,
+  )
+    .bind(racket.id, v.mainBrand, v.mainModel, v.mainTension,
+          v.crossBrand, v.crossModel, v.crossTension, strungAt, createdAt)
+    .first();
+
+  return json({ uuid, job_id: inserted.id, job_index: 1, strung_at: strungAt });
+}
+
+/**
+ * 再穿一次：球拍码不变，新增一条穿线。
+ * 穿线师扫上一次的码进来，填新线新磅数，走的就是这个接口。
+ */
+async function createJob(request, env, uuid) {
+  if (!env.ADMIN_TOKEN) return fail('SERVER_MISCONFIGURED', 500, '服务器未配置 ADMIN_TOKEN');
+  if (!UUID_RE.test(uuid)) return fail('RACKET_NOT_FOUND', 404, '球拍不存在');
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return fail('BAD_JSON', 400, '请求体必须是 JSON');
+  }
+
+  if (!constantTimeEqual(body?.admin_token ?? '', env.ADMIN_TOKEN)) {
+    return fail('TOKEN_INVALID', 401, '后台口令错误');
+  }
+
+  const racket = await getRacket(env, uuid);
+  if (!racket) return fail('RACKET_NOT_FOUND', 404, '球拍不存在');
+
+  const job = readJobFields(body);
+  if (!job.values) return fail(job.code, 400, job.message);
+
+  const strungAt = job.values.strungAt;
+  const createdAt = now();
+  const v = job.values;
+
+  // 补记旧日期时不要盖掉「现在拍上这一根」：比当前那次更早的，只当历史记录加进去
+  const currentJob = await env.DB.prepare(
+    `SELECT id, strung_at FROM string_jobs WHERE racket_id = ? AND is_current = 1 LIMIT 1`,
+  )
+    .bind(racket.racket_id)
+    .first();
+  const isBackdated = Boolean(
+    currentJob && Date.parse(strungAt) < Date.parse(currentJob.strung_at),
+  );
+
+  if (!isBackdated) {
+    // 旧的这次退成历史，新的成为「现在拍上这一根」
+    await env.DB.prepare(`UPDATE string_jobs SET is_current = 0 WHERE racket_id = ?`)
+      .bind(racket.racket_id)
+      .run();
+  }
+
+  const inserted = await env.DB.prepare(
+    `INSERT INTO string_jobs (racket_id, main_brand, main_model, main_tension,
+                              cross_brand, cross_model, cross_tension, strung_at, is_current, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     RETURNING id`,
+  )
+    .bind(racket.racket_id, v.mainBrand, v.mainModel, v.mainTension,
+          v.crossBrand, v.crossModel, v.crossTension, strungAt, isBackdated ? 0 : 1, createdAt)
+    .first();
+
+  // 顺手允许修正球拍身份信息（扫旧码进来时型号可能写错过）
+  const racketBrand = cleanText(body?.racket_brand, 40);
+  const racketModel = cleanText(body?.racket_model, 80);
+  if (racketModel && (racketModel !== racket.racket_model || racketBrand !== racket.racket_brand)) {
+    await env.DB.prepare(`UPDATE rackets SET racket_brand = ?, racket_model = ? WHERE id = ?`)
+      .bind(racketBrand, racketModel, racket.racket_id)
+      .run();
+  }
+
+  // 第几次按日期算，不是按插入顺序：补记旧日期时不会报成「第 3 次」
+  const count = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM string_jobs
+      WHERE racket_id = ? AND (strung_at < ? OR (strung_at = ? AND id <= ?))`,
+  )
+    .bind(racket.racket_id, strungAt, strungAt, inserted.id)
+    .first();
+
+  return json({
+    uuid,
+    job_id: inserted.id,
+    job_index: Number(count.n) || 1,
+    strung_at: strungAt,
+    is_current: !isBackdated,
+  });
+}
+
+/** 穿线师总览：所有球拍 + 每支的穿线历史 */
+async function listAllRackets(request, env) {
+  if (!env.ADMIN_TOKEN) return fail('SERVER_MISCONFIGURED', 500, '服务器未配置 ADMIN_TOKEN');
+
+  let body = {};
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+  if (!constantTimeEqual(body?.admin_token ?? '', env.ADMIN_TOKEN)) {
+    return fail('TOKEN_INVALID', 401, '后台口令错误');
+  }
+
+  const limit = Math.min(Math.max(Number(body?.limit) || 100, 1), 300);
+
+  const rows = await env.DB.prepare(
+    `SELECT ${RACKET_COLUMNS},
+            u.email AS owner_email_raw,
+            (SELECT COUNT(*) FROM string_jobs sj WHERE sj.racket_id = r.id) AS job_count,
+            COALESCE(SUM(l.duration_hours), 0) AS total_hours,
+            COUNT(l.id) AS log_count,
+            MAX(l.logged_at) AS last_log_at
+       ${RACKET_FROM}
+       LEFT JOIN users u ON u.id = r.owner_id
+       LEFT JOIN usage_logs l ON l.racket_uuid = r.uuid
+      GROUP BY r.id
+      ORDER BY COALESCE(j.strung_at, r.created_at) DESC
+      LIMIT ?`,
+  )
+    .bind(limit)
+    .all();
+
+  const rackets = (rows.results || []).map((row) => ({
+    ...mapRacketRow(row),
+    owner_email: maskEmail(row.owner_email_raw),
+    job_count: Number(row.job_count) || 0,
+    total_hours: Number(row.total_hours) || 0,
+    log_count: Number(row.log_count) || 0,
+    last_log_at: row.last_log_at || null,
+  }));
+
+  // 所有穿线一次取回，前端按 racket_id 分组（个人用量，几百条以内很快）
+  const jobRows = await env.DB.prepare(
+    `SELECT sj.racket_id, sj.id, sj.main_brand, sj.main_model, sj.main_tension,
+            sj.cross_brand, sj.cross_model, sj.cross_tension, sj.strung_at, sj.is_current,
+            COALESCE(SUM(l.duration_hours), 0) AS total_hours,
+            COUNT(l.id) AS log_count
+       FROM string_jobs sj
+       LEFT JOIN usage_logs l ON l.string_job_id = sj.id
+      GROUP BY sj.id
+      ORDER BY sj.strung_at DESC, sj.id DESC`,
+  ).all();
+
+  // 用球拍码（uuid）作 key，前端拿到就能直接查
+  const idToUuid = {};
+  (rows.results || []).forEach((row) => { idToUuid[String(row.racket_id)] = row.uuid; });
+
+  const jobsByRacket = {};
+  (jobRows.results || []).forEach((row) => {
+    const uuid = idToUuid[String(row.racket_id)];
+    if (!uuid) return;
+    if (!jobsByRacket[uuid]) jobsByRacket[uuid] = [];
+    jobsByRacket[uuid].push(mapJobRow(row));
+  });
+
+  return json({ rackets, jobs_by_racket: jobsByRacket });
 }
 
 async function readRacket(request, env, url, uuid) {
@@ -337,15 +592,22 @@ async function readRacket(request, env, url, uuid) {
   const racket = await getRacket(env, uuid);
   if (!racket) return fail('RACKET_NOT_FOUND', 404, '球拍不存在');
 
-  const logs = await getLogs(env, uuid);
+  const [logs, jobs] = await Promise.all([
+    getLogs(env, uuid),
+    getJobs(env, racket.racket_id),
+  ]);
 
   return json({
     racket: { ...mapRacketRow(racket), owner_email: maskEmail(racket.owner_email_raw) },
+    jobs,
+    job_count: jobs.length,
+    current_job_id: racket.job_id,
     logs: logs.map((row) => ({
       duration_hours: Number(row.duration_hours),
       feedback: row.feedback,
       temperature_c: row.temperature_c === null ? null : Number(row.temperature_c),
       logged_at: row.logged_at,
+      string_job_id: row.string_job_id === null ? null : Number(row.string_job_id),
     })),
     scan_url: `${url.origin}/r/${racket.uuid}`,
   });
@@ -383,11 +645,15 @@ async function createLog(request, env, uuid) {
   const temperature = hasCoords ? await fetchTemperature(latitude, longitude) : null;
   const loggedAt = now();
 
+  // 记录挂到「现在拍上这一根线」上，健康度才能只看这一次穿线的数据
+  const currentJob = await getCurrentJob(env, racket.racket_id);
+
   await env.DB.prepare(
-    `INSERT INTO usage_logs (racket_uuid, duration_hours, feedback, temperature_c, logged_at)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO usage_logs (racket_uuid, string_job_id, duration_hours, feedback, temperature_c, logged_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   )
-    .bind(uuid, duration, feedback && feedback.length ? feedback : null, temperature, loggedAt)
+    .bind(uuid, currentJob ? currentJob.id : null, duration, feedback && feedback.length ? feedback : null,
+          temperature, loggedAt)
     .run();
 
   return json({
@@ -397,6 +663,7 @@ async function createLog(request, env, uuid) {
       feedback: feedback && feedback.length ? feedback : null,
       temperature_c: temperature,
       logged_at: loggedAt,
+      string_job_id: currentJob ? currentJob.id : null,
     },
   });
 }
@@ -432,7 +699,7 @@ async function listMyRackets(request, env) {
     `SELECT ${RACKET_COLUMNS},
             COALESCE(SUM(l.duration_hours), 0) AS total_hours,
             COUNT(l.id) AS log_count
-       FROM rackets r
+       ${RACKET_FROM}
        LEFT JOIN usage_logs l ON l.racket_uuid = r.uuid
       WHERE r.owner_id = ?
       GROUP BY r.id
@@ -469,7 +736,7 @@ async function lookupRackets(request, env) {
     `SELECT ${RACKET_COLUMNS},
             COALESCE(SUM(l.duration_hours), 0) AS total_hours,
             COUNT(l.id) AS log_count
-       FROM rackets r
+       ${RACKET_FROM}
        LEFT JOIN usage_logs l ON l.racket_uuid = r.uuid
       WHERE r.uuid IN (${placeholders})
       GROUP BY r.id`,
@@ -582,6 +849,7 @@ async function handleApi(request, env, url) {
   if (path === '/api/my' && method === 'GET') return listMyRackets(request, env);
   if (path === '/api/rackets' && method === 'POST') return createRacket(request, env);
   if (path === '/api/rackets/lookup' && method === 'POST') return lookupRackets(request, env);
+  if (path === '/api/rackets/list' && method === 'POST') return listAllRackets(request, env);
 
   if (path === '/api/auth/register' && method === 'POST') return register(request, env, url);
   if (path === '/api/auth/login' && method === 'POST') return login(request, env, url);
@@ -589,13 +857,14 @@ async function handleApi(request, env, url) {
     return json({ ok: true }, 200, { 'set-cookie': clearSessionCookie(url) });
   }
 
-  const match = path.match(/^\/api\/rackets\/([^/]+)(?:\/(logs|claim))?$/);
+  const match = path.match(/^\/api\/rackets\/([^/]+)(?:\/(logs|claim|jobs))?$/);
   if (match) {
     const uuid = decodeURIComponent(match[1]);
     const action = match[2];
     if (!action && method === 'GET') return readRacket(request, env, url, uuid);
     if (action === 'logs' && method === 'POST') return createLog(request, env, uuid);
     if (action === 'claim' && method === 'POST') return claimRacket(request, env, uuid);
+    if (action === 'jobs' && method === 'POST') return createJob(request, env, uuid);
     return fail('METHOD_NOT_ALLOWED', 405, '方法不被允许');
   }
 
@@ -611,6 +880,7 @@ async function handlePage(request, env, url) {
     '/login': '/login.html',
     '/my': '/my.html',
     '/local': '/local.html',
+    '/list': '/list.html',
   };
 
   const target = path === '/r' || path.startsWith('/r/') ? '/r.html' : pages[path];

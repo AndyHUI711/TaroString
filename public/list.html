@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>所有球拍 · 穿線師</title>
+  <meta name="theme-color" content="#f7f5f1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <a class="brand" href="/">TARO<span>·</span><span data-i18n="nav.desk">穿線台</span></a>
+    <nav>
+      <a href="/list" data-i18n="nav.list">所有球拍</a>
+      <a href="/local" data-i18n="nav.local">本機球拍</a>
+      <a href="/my" data-i18n="nav.my">我的球拍</a>
+      <span id="lang-switch"></span>
+    </nav>
+  </div>
+
+  <main class="wrap">
+    <h1 data-i18n="list.title">所有球拍</h1>
+    <p class="lead" data-i18n="list.lead">這裡是穿線師的檔案室：每支拍穿過幾次、現在穿的什麼線。</p>
+
+    <section class="card" id="gate">
+      <div class="field">
+        <label for="admin-token" data-i18n="admin.token">後台口令</label>
+        <input type="password" id="admin-token" autocomplete="off" />
+        <p class="hint" data-i18n="admin.tokenHint">口令只保存在這台裝置上。</p>
+      </div>
+      <button class="btn" type="button" id="load-btn" data-i18n="list.load">載入</button>
+      <div class="msg" id="gate-msg"></div>
+    </section>
+
+    <div class="stat-strip" id="stats" hidden>
+      <div class="stat">
+        <div class="stat-num" id="stat-rackets">0</div>
+        <div class="stat-label" data-i18n="list.label.rackets">球拍</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="stat-jobs">0</div>
+        <div class="stat-label" data-i18n="list.label.jobs">穿線次數</div>
+      </div>
+    </div>
+
+    <section class="card" id="list-card" hidden>
+      <div class="list" id="racket-list"></div>
+      <div class="empty" id="list-empty" hidden data-i18n="list.empty">還沒有球拍。</div>
+      <div class="msg" id="list-msg"></div>
+    </section>
+
+    <p class="foot" data-i18n="list.foot">點一支拍可以看到它的每一次穿線。</p>
+  </main>
+
+  <script src="/i18n.js"></script>
+  <script src="/client.js"></script>
+  <script>
+    const TOKEN_KEY = 'rl_admin_token';
+    const tokenInput = document.getElementById('admin-token');
+    const loadBtn = document.getElementById('load-btn');
+    const gateMsg = document.getElementById('gate-msg');
+    const gate = document.getElementById('gate');
+    const stats = document.getElementById('stats');
+    const listCard = document.getElementById('list-card');
+    const racketList = document.getElementById('racket-list');
+    const listEmpty = document.getElementById('list-empty');
+    const listMsg = document.getElementById('list-msg');
+
+    const saved = sessionStorage.getItem(TOKEN_KEY);
+    if (saved) tokenInput.value = saved;
+
+    let data = { rackets: [], jobs_by_racket: {} };
+
+    function jobLine(job) {
+      if (job.cross_model) {
+        return `${lineText({ brand: job.main_brand, model: job.main_model, tension: job.main_tension })} / ${lineText({ brand: job.cross_brand, model: job.cross_model, tension: job.cross_tension })}`;
+      }
+      return lineText({ brand: job.main_brand, model: job.main_model, tension: job.main_tension });
+    }
+
+    function renderList() {
+      const rackets = data.rackets || [];
+      stats.hidden = false;
+      listCard.hidden = false;
+
+      document.getElementById('stat-rackets').textContent = rackets.length;
+      document.getElementById('stat-jobs').textContent = rackets.reduce((sum, r) => sum + (r.job_count || 0), 0);
+
+      if (!rackets.length) {
+        listEmpty.hidden = false;
+        racketList.innerHTML = '';
+        return;
+      }
+      listEmpty.hidden = true;
+
+      racketList.innerHTML = rackets.map((r, index) => {
+        return `
+          <details class="item racket-item" data-index="${index}">
+            <summary>
+              <div class="item-title">
+                <strong>${escapeHtml([r.racket_brand, r.racket_model].filter(Boolean).join(' ') || r.uuid.slice(0, 8))}</strong>
+                <span class="item-side">${escapeHtml(t('list.jobCount', { n: r.job_count }))} <span class="chev" aria-hidden="true">▾</span></span>
+              </div>
+              <div class="item-meta">${escapeHtml(lineText({ brand: r.main_brand, model: r.main_model, tension: r.main_tension }))}${r.cross_model ? ' / ' + escapeHtml(lineText({ brand: r.cross_brand, model: r.cross_model, tension: r.cross_tension })) : ''}</div>
+              <div class="item-meta">${escapeHtml(t('list.meta', { h: fmtHours(r.total_hours), n: r.log_count }))}${r.strung_at ? ` · ${escapeHtml(fmtDateShort(r.strung_at))}` : ''}${r.claimed ? ` · ${escapeHtml(t('list.claimed', { email: r.owner_email || '' }))}` : ''}</div>
+            </summary>
+            <div class="detail" data-host="${index}"></div>
+            <div class="btn-row">
+              <a class="btn ghost small" href="/r/${encodeURIComponent(r.uuid)}" data-i18n="list.open">查看客戶頁</a>
+              <a class="btn ghost small" href="/?racket=${encodeURIComponent(r.uuid)}" data-i18n="list.restring">再穿一次</a>
+            </div>
+            <div class="mono tiny-code">${escapeHtml(r.uuid)}</div>
+          </details>`;
+      }).join('');
+
+      // 展开时才渲染穿线历史，列表先保持轻
+      racketList.querySelectorAll('details.racket-item').forEach((el) => {
+        el.addEventListener('toggle', () => {
+          if (!el.open || el.dataset.filled === '1') return;
+          el.dataset.filled = '1';
+          const idx = Number(el.dataset.index);
+          const racket = rackets[idx];
+          const detail = el.querySelector('.detail');
+          const jobs = data.jobs_by_racket[racket.uuid] || [];
+          if (!jobs.length) {
+            detail.innerHTML = `<p class="hint">${escapeHtml(t('list.noJobs'))}</p>`;
+            return;
+          }
+          detail.innerHTML = jobs.map((job, i) => {
+            const seq = jobs.length - i;
+            return `
+              <div class="job-line${job.is_current ? ' current' : ''}">
+                <div class="job-line-head">
+                  <strong>${escapeHtml(t('r.jobIndex', { n: seq }))}</strong>
+                  <span>${escapeHtml(fmtDateShort(job.strung_at))}${job.is_current ? ` · ${escapeHtml(t('r.jobs.current'))}` : ''}</span>
+                </div>
+                <div class="item-meta">${escapeHtml(jobLine(job))}</div>
+                <div class="item-meta">${escapeHtml(job.log_count ? t('r.jobs.used', { h: fmtHours(job.total_hours), n: job.log_count }) : t('r.jobs.none'))}</div>
+              </div>`;
+          }).join('');
+        });
+      });
+    }
+
+    async function loadAll() {
+      hideMessage(gateMsg);
+      const token = tokenInput.value.trim();
+      if (!token) return showMessage(gateMsg, t('msg.needToken'));
+
+      loadBtn.disabled = true;
+      try {
+        const res = await api('/api/rackets/list', {
+          method: 'POST',
+          body: JSON.stringify({ admin_token: token }),
+        });
+        if (!res.ok) {
+          if (res.status === 401) {
+            sessionStorage.removeItem(TOKEN_KEY);
+            tokenInput.value = '';
+          }
+          return showMessage(gateMsg, errText(res.data));
+        }
+        sessionStorage.setItem(TOKEN_KEY, token);
+        data = res.data;
+        gate.hidden = true;
+        renderList();
+      } catch (error) {
+        showMessage(gateMsg, t('msg.netError'));
+      } finally {
+        loadBtn.disabled = false;
+      }
+    }
+
+    loadBtn.addEventListener('click', loadAll);
+    tokenInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') loadAll();
+    });
+
+    // 存过口令就直接进
+    if (saved) loadAll();
+  </script>
+</body>
+</html>

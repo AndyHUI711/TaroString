@@ -36,17 +36,20 @@ racket-logger/
 ├─ schema.sql            # D1 建表
 ├─ wrangler.toml         # 绑定 D1、静态资源、兼容日期
 ├─ public/
-│  ├─ index.html         # /        穿线台（口令 + 表单 + 二维码）
-│  ├─ r.html             # /r/{uuid} 客户扫码页
+│  ├─ index.html         # /        穿线台（口令 + 表单 + 二维码；?racket= 为重穿预填）
+│  ├─ list.html          # /list    穿线师总览：所有球拍 + 每支的穿线历史
+│  ├─ r.html             # /r/{uuid} 客户扫码页（按球拍码，含穿线历史与建议）
 │  ├─ login.html         # /login   登录 / 注册切换
 │  ├─ my.html            # /my      我的球拍（云端数据）
 │  ├─ local.html         # /local   本机球拍（浏览器留存）
 │  ├─ client.js          # 接口封装、本机留存、定位、提示
 │  ├─ i18n.js            # 繁體 / 简体 / English 字典 + 语言切换 + 日期磅数格式化
 │  ├─ brands.js          # 球拍品牌、球线品牌、常用线型号清单 + 品牌下拉控件
+│  ├─ health.js          # 穿线建议：健康度 + 温度/手感修正磅数（纯前端计算）
 │  └─ style.css
 ├─ migrations/
-│  └─ 002_hybrid_strings.sql   # 已上线的旧库升级到品牌 + 子母线结构
+│  ├─ 002_hybrid_strings.sql   # v1 -> v2：品牌 + 子母线
+│  └─ 003_string_jobs.sql      # v2 -> v3：球拍 ID 与穿线 ID 拆成两层
 └─ package.json
 ```
 
@@ -186,8 +189,10 @@ npx wrangler d1 export racket-logger --remote --output=backup-2026-11-07.sql
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
-| POST | `/api/rackets` | ADMIN_TOKEN | 建球拍，返回 `uuid`；口令错 401，字段缺 400（错误一律带 `error_code`） |
-| GET | `/api/rackets/:uuid` | 无 | 球拍详情 + 记录（倒序）+ `scan_url` |
+| POST | `/api/rackets` | ADMIN_TOKEN | 建球拍，返回球拍码 `uuid` + 第一条穿线 `job_id`；口令错 401，字段缺 400（错误一律带 `error_code`） |
+| POST | `/api/rackets/:uuid/jobs` | ADMIN_TOKEN | **同一支拍再穿一次**：球拍码不变，新增一条穿线并成为「现在这根」 |
+| POST | `/api/rackets/list` | ADMIN_TOKEN | 穿线师总览：所有球拍 + 每支的穿线历史（`jobs_by_racket` 以球拍码为 key） |
+| GET | `/api/rackets/:uuid` | 无 | 球拍详情（当前穿线平铺）+ `jobs` 全部穿线 + 记录（倒序）+ `current_job_id` + `scan_url` |
 | POST | `/api/rackets/:uuid/logs` | **无（匿名核心）** | 提交时长，自动附温度；时长非法 400 |
 | POST | `/api/rackets/:uuid/claim` | 登录 | 认领；未登录 401，已被认领 409 |
 | GET | `/api/my` | 登录 | 名下球拍 + 累计时长 / 记录数 |
@@ -389,3 +394,113 @@ npx wrangler d1 execute racket-logger --remote --file=./migrations/002_hybrid_st
 - [x] 線種推斷：VS Touch → natural gut、X-One → multifilament、Synthetic Gut PPS → synthetic gut、未知型號 → poly
 - [x] 沒有溫度記錄時只給手感建議，並顯示「沒有氣溫資料」
 - [x] 繁體 / 简体 / English 全部正常（腳本掃 157 個用到的鍵、三份字典各 198 條，零漏譯）
+
+## 十一、v3 更新：球拍 ID 与穿线 ID 拆成两层
+
+### 11.1 为什么要拆
+
+v2 的一支拍只有一个 `uuid`，它同时是「球拍编号」和「这次穿线的编号」。结果就是：每重穿一次就得生成一个新码、重新打印、重新贴上拍框 —— 客户手机里存的还是旧码，旧码指向的是一次已经废掉的穿线。
+
+v3 拆开：
+
+| 概念 | 存哪 | 变不变 | 谁在用 |
+|---|---|---|---|
+| **球拍 ID**（球拍码 `uuid`） | `rackets.uuid` | **一辈子不变** | 贴在拍框上的二维码、客户存的链接 |
+| **穿线 ID**（`string_jobs.id`） | `string_jobs.id` | 每次重穿 +1 条 | 后台区分「这是第几次穿的线」、健康度只看这一次 |
+
+所以二维码永远指向 `/r/{球拍码}`。重穿不换码，贴纸不用动。
+
+### 11.2 表结构（v3）
+
+```sql
+rackets(id, uuid, racket_brand, racket_model, owner_id, claimed_at, created_at)
+
+string_jobs(id, racket_id, main_brand, main_model, main_tension,
+            cross_brand, cross_model, cross_tension,
+            strung_at, is_current, created_at)   -- is_current=1 是现在拍上这一根
+
+usage_logs(id, racket_uuid, string_job_id, duration_hours, feedback, temperature_c, logged_at)
+```
+
+- 线、磅数、穿线时间这些「每次会变的东西」全在 `string_jobs`，`rackets` 只剩身份信息。
+- `usage_logs` 同时保留 `racket_uuid`（按拍查全部记录）和 `string_job_id`（按这一次穿线查）。
+- 新记录自动挂到 `is_current = 1` 的那条穿线上，所以换了线以后，「这一次穿线用了多久」是干净的，健康度不会被上一根线的用量拖累。
+
+### 11.3 从 v2 升上来（已经上线过就必须跑一次）
+
+```bash
+npx wrangler d1 export racket-logger --remote --output=backup-before-v3.sql   # 先备份
+npx wrangler d1 execute racket-logger --remote --file=./migrations/003_string_jobs.sql
+```
+
+`003` 做四件事：建 `string_jobs`、把每支旧球拍现有的线/磅数/穿线时间搬成它的第一条穿线（`is_current=1`）、给 `usage_logs` 加 `string_job_id` 并回填到那条穿线上、把 `rackets` 里的线字段删掉（SQLite `DROP COLUMN`，D1 支持）。
+
+已在 v2 测试库上跑过：迁移后 `main_model='ALU Power'`、`main_tension=47.5`、子母线那支 `cross_model='ALU Power'` / `cross_tension=48`；历史两条记录都挂到了正确的那条穿线上，一条没丢。
+
+**旧的二维码还能用。** 迁移后旧的每个 uuid 变成一个球拍（里面装着它当时那一次穿线），扫旧码照常打开、照常记录。只是如果 v2 时期同一支拍穿过两次、印过两张码，它们在库里是两支「球拍」——想让它们合并成一支，只能手工把 `usage_logs.racket_uuid` 改到留下的那个码上，再删掉多余那支。要不要做，看你手上的旧码有多少。
+
+### 11.4 穿线师的两个新入口
+
+**① 扫上一次的码，直接预填重穿**（`/?racket=<球拍码>`）
+
+穿线师用手机扫客户拍框上的码（或客户发来的链接），页面上有一个「再穿一次」按钮 → 跳到穿线台，并且：
+
+- 球拍品牌、型号已经填好并锁起来（这两项不该跟着线变）
+- **主线 / 横线 / 磅数全部带出上一次的值**，子母线会自动勾上
+- 只需要改要改的数字，按「新增這次穿線」提交
+
+提交走 `POST /api/rackets/:uuid/jobs`：球拍码不变，`string_jobs` 加一条，旧的 `is_current` 归零。结果页显示的仍然是同一张二维码（同一个链接），所以不用重新打印贴纸。
+
+> 「再穿一次」按钮只在**存过后台口令的那台装置**上出现（`sessionStorage`），客户手机上看不到。
+
+**② `/list` 所有球拍（穿线师的档案室）**
+
+输入口令后列出所有穿过的球拍，每支显示：当前线/磅数、穿过几次、累计小时、记录条数、最近穿线日期、谁认领的。点开一支拍，展开它的每一次穿线（第几次、日期、当时的线、这一次用掉多少小时多少条记录），并给出两个按钮：查看客户页 / 再穿一次。
+
+数据来自 `POST /api/rackets/list`，一次返回列表 + 全部穿线（按球拍码分组），个人用量下几百条以内很快。
+
+### 11.5 客户页有什么变化
+
+`/r/{球拍码}` 现在：
+
+- 顶部仍是「累计使用 / 条记录」，信息卡多了「第幾次」——客户会知道自己手上是第几根线
+- 多一张「這支拍穿過幾次」卡（穿过 2 次以上才显示），每次一行：第几次、日期、当时的线、这次用了多久；当前那根有「現在這根」标记
+- 使用记录里，**不属于当前这次穿线的旧记录会带一个「第 N 次」小标签**，不会跟现在这根混在一起
+- 穿线建议只算当前这次穿线的记录（换线后从头算，这符合直觉）
+
+### 11.6 这一版的验收（本地已跑通）
+
+- [x] 建新拍 → `uuid` + `job_id=1`，`GET` 返回 `job_count=1`、`current_job_id=1`
+- [x] 重穿一次 → `job_id=2`、`job_index=2`，`uuid` 不变；旧穿线 `is_current=0`
+- [x] 客户页「第幾次」显示「第 2 次」，穿线历史两条都正确（第 1 次 2 小时/1 条，第 2 次还没记录）
+- [x] 旧穿线的记录带「第 1 次」标签，新提交的记录落到 job 2（`string_job_id=2`）
+- [x] 换线后穿线建议只算当前这根（没有记录时显示「多打幾次之後…」，不继承上一根的分数）
+- [x] `/?racket=<uuid>` 带出上次主线/横线/磅数与子母线勾选状态，提交后码不变
+- [x] `/list` 输口令后列出球拍，点开能看到每次穿线；口令错 401 并清掉本地口令
+- [x] v2 测试库跑 `003` 迁移：穿线记录、历史使用记录、子母线字段全部正确
+- [x] 繁體 / 简体 / English 正常（187 个用到的键，三份字典各 228 条，零漏译）
+- [x] 五个页面 + 三个静态 JS 全部 200
+
+### 11.7 穿線日期可以回填
+
+穿線台多了一個「穿線日期」，預設今天。隔幾天補記、或替客戶補一筆舊帳，直接把日期往前選就行。
+
+- 前端送的是**當地中午**的時間（`new Date(y, m-1, d, 12, 0)` 轉 ISO），避免時區把日期挪到前一天或後一天。
+- 後端也接受 `YYYY-MM-DD`，會存成 `04:00Z`（香港正午）。完整 ISO 照原樣收。
+- 只擋兩種不合理：2005 年以前、以及未來超過一天 → 400 `STRUNG_AT_INVALID`。
+- 客戶頁的「穿線」只顯示**日期**，不顯示幾點（回填的日期不該冒出一個假的 12:00）。
+- 清單頁、穿線歷史的排序都按日期，所以補記的舊穿線會自動排到正確的位置，「第幾次」也按日期算，不是按你輸入的先後。
+
+**補記舊日期不會蓋掉現在那根線**
+
+如果補的日期比「現在拍上這一根」更早，這條會被標成歷史（`is_current = 0`），現在那根不動，回傳 `is_current: false`，頁面會提示「已補記為第 N 次（日期比現在那根更早，不會蓋掉它）」。不然補一筆去年的帳，客戶手上那根線就被頂掉了。
+
+### 11.8 這一版的補充驗收
+
+- [x] 建拍帶 `strung_at: "2026-10-01"` → 存成 `2026-10-01T04:00:00.000Z`，客戶頁顯示 `2026/10/01`
+- [x] 補記 `2026-09-15`（早於當前）→ `is_current: false`、`job_index: 1`（按日期算），當前那根不動
+- [x] 再補一筆 `2026-08-20` → `job_index: 1`，四個日期排序 `11-08 > 10-01 > 09-15 > 08-20` 正確
+- [x] 選今天 → 成為「現在這根」，舊的退成歷史
+- [x] `2027-01-01` → 400 `STRUNG_AT_INVALID`（不能是未来）
+- [x] `昨天` → 400 `STRUNG_AT_INVALID`（看不懂的日期）
+- [x] 順手修掉一個樣式 bug：`.notice` 的 `display` 蓋掉 `hidden`，導致重穿提示條在新建模式下也顯示 → 全域加 `[hidden] { display: none !important }`
