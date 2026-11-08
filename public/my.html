@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>我的球拍 · 穿線台</title>
+  <meta name="theme-color" content="#f7f5f1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <a class="brand" href="/">TARO<span>·</span><span data-i18n="nav.desk">穿線台</span></a>
+    <nav>
+      <a href="/local" data-i18n="nav.local">本機球拍</a>
+      <a href="#" id="logout-link" data-i18n="nav.logout">登出</a>
+      <span id="lang-switch"></span>
+    </nav>
+  </div>
+
+  <main class="wrap">
+    <h1 data-i18n="my.title">我的球拍</h1>
+    <p class="lead" id="my-lead" data-i18n="my.leadLoading">正在讀取…</p>
+
+    <div id="loading" class="empty">…</div>
+
+    <div id="error-box" class="card" hidden>
+      <h2 data-i18n="my.errorTitle">暫時讀不到你的球拍</h2>
+      <p class="hint" id="error-text" data-i18n="my.errorBody">請稍後重試。</p>
+    </div>
+
+    <div id="total-card" class="card" hidden>
+      <dl class="kv">
+        <dt data-i18n="my.statCount">球拍數量</dt><dd id="stat-count">0</dd>
+        <dt data-i18n="my.statHours">累積使用</dt><dd id="stat-hours">0</dd>
+        <dt data-i18n="my.statLogs">記錄條數</dt><dd id="stat-logs">0</dd>
+      </dl>
+    </div>
+
+    <section class="card" id="list-card" hidden>
+      <h2 data-i18n="my.listTitle">已認領的球拍</h2>
+      <div class="list" id="list"></div>
+    </section>
+
+    <div id="empty-box" class="card" hidden>
+      <h2 data-i18n="my.emptyTitle">還沒有認領任何球拍</h2>
+      <p class="hint" data-i18n="my.emptyBody">打開穿線師給你的連結，按「認領這支球拍」。</p>
+      <a class="btn ghost" href="/local" style="margin-top:12px" data-i18n="my.localBtn">看看本機掃過的球拍</a>
+    </div>
+  </main>
+
+  <script src="/i18n.js"></script>
+  <script src="/client.js"></script>
+  <script>
+    async function load() {
+      const res = await api('/api/my');
+
+      if (res.status === 401) {
+        location.href = '/login?next=/my';
+        return;
+      }
+
+      if (!res.ok) {
+        document.getElementById('loading').hidden = true;
+        document.getElementById('error-box').hidden = false;
+        document.getElementById('error-text').textContent = errText(res.data);
+        return;
+      }
+
+      const rackets = res.data.rackets || [];
+      document.getElementById('loading').hidden = true;
+      document.getElementById('my-lead').textContent = t('my.lead', { email: res.data.email });
+
+      const totalHours = rackets.reduce((sum, r) => sum + Number(r.total_hours || 0), 0);
+      const totalLogs = rackets.reduce((sum, r) => sum + Number(r.log_count || 0), 0);
+
+      document.getElementById('total-card').hidden = false;
+      document.getElementById('stat-count').textContent = t('my.unitCount', { n: rackets.length });
+      document.getElementById('stat-hours').textContent = fmtHours(totalHours);
+      document.getElementById('stat-logs').textContent = String(totalLogs);
+
+      if (!rackets.length) {
+        document.getElementById('empty-box').hidden = false;
+        return;
+      }
+
+      document.getElementById('list-card').hidden = false;
+      document.getElementById('list').innerHTML = rackets.map((r) => {
+        const title = [r.racket_brand, r.racket_model].filter(Boolean).join(' ');
+        const stringText = r.cross_model
+          ? t('meta.mainCross', {
+              main: lineText({ brand: r.main_brand, model: r.main_model, tension: r.main_tension }),
+              cross: lineText({ brand: r.cross_brand, model: r.cross_model, tension: r.cross_tension }),
+            })
+          : lineText({ brand: r.main_brand, model: r.main_model, tension: r.main_tension });
+        const meta = `${stringText} · ${t('unit.logs', { n: r.log_count })} · ${fmtDateShort(r.strung_at)}`;
+
+        return `
+          <a class="item" href="/r/${r.uuid}">
+            <div class="item-title">
+              <strong>${escapeHtml(title)}</strong>
+              <span class="item-side">${fmtHours(r.total_hours)}</span>
+            </div>
+            <div class="item-meta">${escapeHtml(meta)}</div>
+          </a>`;
+      }).join('');
+    }
+
+    document.getElementById('logout-link').addEventListener('click', async (event) => {
+      event.preventDefault();
+      await api('/api/auth/logout', { method: 'POST', body: '{}' });
+      location.href = '/login?next=/my';
+    });
+
+    load();
+  </script>
+</body>
+</html>

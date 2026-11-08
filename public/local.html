@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>本機球拍 · 穿線台</title>
+  <meta name="theme-color" content="#f7f5f1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <a class="brand" href="/">TARO<span>·</span><span data-i18n="nav.desk">穿線台</span></a>
+    <nav>
+      <a href="/my" data-i18n="nav.my">我的球拍</a>
+      <span id="lang-switch"></span>
+    </nav>
+  </div>
+
+  <main class="wrap">
+    <h1 data-i18n="local.title">本機球拍</h1>
+    <p class="lead" data-i18n="local.lead">這些是你掃過或打開過的球拍。</p>
+
+    <div id="loading" class="empty">…</div>
+
+    <section class="card" id="list-card" hidden>
+      <div class="list" id="list"></div>
+    </section>
+
+    <div id="empty-box" class="card" hidden>
+      <h2 data-i18n="local.emptyTitle">這裡還是空的</h2>
+      <p class="hint" data-i18n="local.emptyBody">掃一次球拍上的 QR Code 就會出現在這裡。</p>
+    </div>
+
+    <div class="btn-row" id="clear-row" hidden style="margin-top:4px">
+      <button class="btn ghost small" type="button" id="clear-btn" data-i18n="local.clear">清空本機記錄</button>
+    </div>
+
+    <p class="foot"><span data-i18n="local.foot">只影響這台瀏覽器</span> · <a href="/my" data-i18n="local.cloud">登入後看雲端資料</a></p>
+  </main>
+
+  <script src="/i18n.js"></script>
+  <script src="/client.js"></script>
+  <script>
+    async function load() {
+      const local = listLocalRackets();
+      document.getElementById('loading').hidden = true;
+
+      if (!local.length) {
+        document.getElementById('empty-box').hidden = false;
+        return;
+      }
+
+      // 已知型号先用本地缓存兜底，再向服务端取最新摘要
+      let remote = [];
+      try {
+        const res = await api('/api/rackets/lookup', {
+          method: 'POST',
+          body: JSON.stringify({ uuids: local.map((item) => item.uuid) }),
+        });
+        if (res.ok) remote = res.data.rackets || [];
+      } catch {
+        remote = [];
+      }
+
+      const byUuid = new Map(remote.map((r) => [r.uuid, r]));
+      const rows = local.map((item) => ({ item, racket: byUuid.get(item.uuid) || null }));
+
+      document.getElementById('list-card').hidden = false;
+      document.getElementById('clear-row').hidden = false;
+      document.getElementById('list').innerHTML = rows.map(({ item, racket }) => {
+        let title;
+        let meta;
+        if (racket) {
+          title = [racket.racket_brand, racket.racket_model].filter(Boolean).join(' ');
+          const stringText = racket.cross_model
+            ? t('meta.mainCross', {
+                main: lineText({ brand: racket.main_brand, model: racket.main_model, tension: racket.main_tension }),
+                cross: lineText({ brand: racket.cross_brand, model: racket.cross_model, tension: racket.cross_tension }),
+              })
+            : lineText({ brand: racket.main_brand, model: racket.main_model, tension: racket.main_tension });
+          meta = `${stringText} · ${fmtHours(racket.total_hours)} · ${t('unit.logs', { n: racket.log_count })}`;
+        } else {
+          title = item.model || t('local.fallback', { id: item.uuid.slice(0, 8) });
+          meta = t('local.gone');
+        }
+
+        return `
+          <a class="item" href="/r/${item.uuid}">
+            <div class="item-title">
+              <strong>${escapeHtml(title)}</strong>
+              <span class="item-side">${t('admin.open')}</span>
+            </div>
+            <div class="item-meta">${escapeHtml(meta)}</div>
+          </a>`;
+      }).join('');
+    }
+
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      if (!confirm(t('local.clearConfirm'))) return;
+      clearLocalRackets();
+      location.reload();
+    });
+
+    load();
+  </script>
+</body>
+</html>

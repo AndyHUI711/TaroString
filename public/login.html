@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>登入 · 穿線台</title>
+  <meta name="theme-color" content="#f7f5f1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <a class="brand" href="/">TARO<span>·</span><span data-i18n="nav.desk">穿線台</span></a>
+    <nav>
+      <a href="/local" data-i18n="nav.local">本機球拍</a>
+      <span id="lang-switch"></span>
+    </nav>
+  </div>
+
+  <main class="wrap">
+    <h1 data-i18n="auth.title">登入或註冊</h1>
+    <p class="lead" data-i18n="auth.lead">帳號只用來認領球拍。</p>
+
+    <div class="seg">
+      <button type="button" class="active" data-mode="login" data-i18n="auth.login">登入</button>
+      <button type="button" data-mode="register" data-i18n="auth.register">註冊</button>
+    </div>
+
+    <form class="card" id="auth-form" novalidate>
+      <div class="field">
+        <label for="email" data-i18n="auth.email">電子郵件</label>
+        <input type="email" id="email" autocomplete="email" placeholder="you@example.com" />
+      </div>
+
+      <div class="field">
+        <label for="password" data-i18n="auth.password">密碼</label>
+        <input type="password" id="password" autocomplete="current-password" />
+        <p class="hint" id="pwd-hint" hidden data-i18n="auth.passwordHint">密碼至少 6 位。</p>
+      </div>
+
+      <button class="btn" type="submit" id="auth-btn" data-i18n="auth.btnLogin">登入</button>
+      <div class="msg" id="auth-msg"></div>
+    </form>
+
+    <p class="foot" id="back-foot" hidden><a href="/" data-i18n="auth.back">← 回穿線台</a></p>
+  </main>
+
+  <script src="/i18n.js"></script>
+  <script src="/client.js"></script>
+  <script>
+    let mode = 'login';
+    const form = document.getElementById('auth-form');
+    const btn = document.getElementById('auth-btn');
+    const msg = document.getElementById('auth-msg');
+    const emailEl = document.getElementById('email');
+    const pwdEl = document.getElementById('password');
+    const pwdHint = document.getElementById('pwd-hint');
+
+    // 認領流程會帶 next=/r/xxx，登入後回到那支球拍
+    const next = new URLSearchParams(location.search).get('next');
+    const target = next && next.startsWith('/') && !next.startsWith('//') ? next : '/my';
+    if (next) document.getElementById('back-foot').hidden = false;
+
+    document.querySelectorAll('.seg button').forEach((button) => {
+      button.addEventListener('click', () => {
+        mode = button.dataset.mode;
+        document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('active', b === button));
+        btn.textContent = mode === 'login' ? t('auth.btnLogin') : t('auth.btnRegister');
+        pwdEl.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+        pwdHint.hidden = mode === 'login';
+        hideMessage(msg);
+      });
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      hideMessage(msg);
+
+      const email = emailEl.value.trim();
+      const password = pwdEl.value;
+      if (!email) return showMessage(msg, t('msg.needEmail'));
+      if (!password) return showMessage(msg, t('msg.needPassword'));
+      if (mode === 'register' && password.length < 6) return showMessage(msg, t('msg.passwordShort'));
+
+      btn.disabled = true;
+      const label = btn.textContent;
+      btn.textContent = t('msg.wait');
+
+      try {
+        const res = await api(`/api/auth/${mode === 'login' ? 'login' : 'register'}`, {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
+        });
+
+        if (!res.ok) {
+          showError(msg, res.data);
+          return;
+        }
+
+        // 稍等一下，让 Set-Cookie 生效再跳转
+        setTimeout(() => { location.href = target; }, 120);
+      } catch (error) {
+        showMessage(msg, t('msg.netError'));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    });
+  </script>
+</body>
+</html>

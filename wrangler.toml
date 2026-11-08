@@ -1,0 +1,27 @@
+name = "racket-logger"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# 静态资源（HTML/CSS/JS）由同一个 Worker 直接托管，
+# 好处：前端与 /api 同域，cookie 不需要处理跨域，二维码链接只有一个域名。
+[assets]
+directory = "./public"
+binding = "ASSETS"
+# 关闭 Cloudflare 的自动 .html 处理：否则 Worker 内部转发 /r.html 会被 307 重定向回 /r，
+# 导致 /r/{uuid} 打不开。页面路由全部由 Worker 显式决定。
+html_handling = "none"
+not_found_handling = "none"
+
+# D1 数据库：先执行 `wrangler d1 create racket-logger`，
+# 再把下面这段 database_id 替换成命令返回的值。
+[[d1_databases]]
+binding = "DB"
+database_name = "racket-logger"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+# 非敏感配置放这里；SESSION_SECRET / ADMIN_TOKEN 用 `wrangler secret put` 配置，
+# 不要写进这个文件，也不要提交到 git。
+
+[observability]
+enabled = true

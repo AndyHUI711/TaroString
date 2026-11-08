@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>球拍 · 使用記錄</title>
+  <meta name="theme-color" content="#f7f5f1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <a class="brand" href="/">TARO<span>·</span><span data-i18n="nav.desk">穿線台</span></a>
+    <nav>
+      <a href="/local" data-i18n="nav.local">本機球拍</a>
+      <a href="/my" data-i18n="nav.my">我的球拍</a>
+      <span id="lang-switch"></span>
+    </nav>
+  </div>
+
+  <main class="wrap">
+    <div class="notice slim">
+      <span aria-hidden="true">✳</span>
+      <div>
+        <strong data-i18n="r.noticeTitle">不用註冊、不用登入。</strong>
+        <span data-i18n="r.noticeBody">選好時間、按提交就好。</span>
+      </div>
+    </div>
+
+    <div id="loading" class="empty" data-i18n="r.loading">正在讀取球拍資訊…</div>
+
+    <div id="not-found" class="card" hidden>
+      <h2 data-i18n="r.notFoundTitle">沒有找到這支球拍</h2>
+      <p class="hint" data-i18n="r.notFoundBody">QR Code 可能對應一支已刪除的球拍。</p>
+    </div>
+
+    <div id="main" hidden>
+      <h1 id="racket-title">—</h1>
+
+      <div class="stat-strip">
+        <div class="stat">
+          <div class="stat-num" id="stat-hours">0</div>
+          <div class="stat-label" data-i18n="r.label.total">累計使用</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num" id="stat-logs">0</div>
+          <div class="stat-label" data-i18n="r.label.logs">條記錄</div>
+        </div>
+      </div>
+
+      <section class="card" id="info-card">
+        <dl class="kv">
+          <dt data-i18n="r.label.main">主線</dt><dd id="k-main">—</dd>
+          <dt data-i18n="r.label.cross" id="dt-cross" hidden>橫線</dt>
+          <dd id="k-cross" hidden>—</dd>
+          <dt data-i18n="r.label.strung">穿線時間</dt><dd id="k-strung">—</dd>
+        </dl>
+        <div class="owner-row">
+          <span id="k-owner">—</span>
+          <button class="link-btn" type="button" id="claim-btn" data-i18n="r.claim.btnLogin">登入並認領</button>
+        </div>
+        <div class="msg" id="claim-msg"></div>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="r.log.title">記錄一次使用</h2>
+
+        <div class="stepper">
+          <button class="step-btn" type="button" id="step-minus" data-i18n-aria="r.log.less">−</button>
+          <div class="step-value"><span id="step-value">1</span><span class="step-unit" data-i18n="unit.hourUnit">小時</span></div>
+          <button class="step-btn" type="button" id="step-plus" data-i18n-aria="r.log.more">+</button>
+        </div>
+        <p class="hint center" data-i18n="r.log.unitPick">大概用了多久？</p>
+
+        <p class="chips-label" data-i18n="r.log.feedbackLabel">手感怎樣？（可多選）</p>
+        <div class="chips" id="chips"></div>
+
+        <button class="btn" type="submit" id="log-btn" data-i18n="r.log.submit">提交記錄</button>
+        <div class="msg" id="log-msg"></div>
+        <p class="hint center tiny" data-i18n="r.log.geo">會自動記一下當天氣溫；拒絕定位也能提交。</p>
+      </section>
+
+      <section class="card">
+        <h2><span data-i18n="r.logs.title">使用記錄</span></h2>
+        <div class="list" id="log-list"></div>
+        <div class="empty" id="log-empty" data-i18n="r.logs.empty">還沒有記錄。</div>
+      </section>
+    </div>
+
+    <p class="foot" data-i18n="r.foot">資料保存在這支球拍的檔案裡</p>
+  </main>
+
+  <script src="/i18n.js"></script>
+  <script src="/client.js"></script>
+  <script>
+    const uuid = decodeURIComponent((location.pathname.split('/')[2] || '').trim());
+    const MIN_HOURS = 0.5;
+    const MAX_HOURS = 12;
+    const STEP_HOURS = 0.5;
+
+    const loadingEl = document.getElementById('loading');
+    const notFoundEl = document.getElementById('not-found');
+    const mainEl = document.getElementById('main');
+    const statHoursEl = document.getElementById('stat-hours');
+    const statLogsEl = document.getElementById('stat-logs');
+    const logListEl = document.getElementById('log-list');
+    const logEmptyEl = document.getElementById('log-empty');
+    const logMsg = document.getElementById('log-msg');
+    const chipsEl = document.getElementById('chips');
+    const stepValueEl = document.getElementById('step-value');
+    const claimBtn = document.getElementById('claim-btn');
+    const claimMsg = document.getElementById('claim-msg');
+
+    let me = { logged_in: false };
+    let current = null;
+    let duration = 1;
+    const selected = new Set();
+
+    /* 时长：默认 1 小时，每次 ± 0.5 */
+    function renderDuration() {
+      const text = duration % 1 === 0 ? duration.toFixed(0) : duration.toFixed(1);
+      stepValueEl.textContent = text;
+      stepValueEl.dataset.hours = String(duration);
+      document.getElementById('step-minus').disabled = duration <= MIN_HOURS;
+      document.getElementById('step-plus').disabled = duration >= MAX_HOURS;
+    }
+
+    function bump(delta) {
+      duration = Math.min(MAX_HOURS, Math.max(MIN_HOURS, Math.round((duration + delta) * 10) / 10));
+      renderDuration();
+    }
+
+    document.getElementById('step-minus').addEventListener('click', () => bump(-STEP_HOURS));
+    document.getElementById('step-plus').addEventListener('click', () => bump(STEP_HOURS));
+
+    /* 反馈：多选按钮 */
+    function renderChips() {
+      chipsEl.innerHTML = FEEDBACK_KEYS.map((key) => {
+        const on = selected.has(key) ? ' on' : '';
+        return `<button type="button" class="chip${on}" data-key="${key}" aria-pressed="${selected.has(key)}">${escapeHtml(t(`fb.${key}`))}</button>`;
+      }).join('');
+    }
+
+    chipsEl.addEventListener('click', (event) => {
+      const chip = event.target.closest('.chip');
+      if (!chip) return;
+      const key = chip.dataset.key;
+      if (selected.has(key)) selected.delete(key);
+      else selected.add(key);
+      chip.classList.toggle('on', selected.has(key));
+      chip.setAttribute('aria-pressed', String(selected.has(key)));
+    });
+
+    /** 把 "comfort|stiff" 这样的存档值渲染成小标签 */
+    function feedbackChips(raw) {
+      if (!raw) return '';
+      const items = String(raw).split('|').filter(Boolean).map((key) => {
+        const known = FEEDBACK_KEYS.includes(key);
+        return `<span class="fb-chip">${escapeHtml(known ? t(`fb.${key}`) : key)}</span>`;
+      });
+      return items.length ? `<div class="fb-chips">${items.join('')}</div>` : '';
+    }
+
+    function renderLogs(logs) {
+      const total = logs.reduce((sum, log) => sum + Number(log.duration_hours || 0), 0);
+      statHoursEl.textContent = fmtHours(total);
+      statLogsEl.textContent = String(logs.length);
+
+      if (!logs.length) {
+        logListEl.innerHTML = '';
+        logEmptyEl.hidden = false;
+        return;
+      }
+      logEmptyEl.hidden = true;
+      logListEl.innerHTML = logs.map((log) => {
+        const temp = log.temperature_c === null || log.temperature_c === undefined
+          ? ''
+          : ` · ${Number(log.temperature_c).toFixed(1)}°C`;
+        return `
+          <div class="log">
+            <div class="log-head">
+              <span class="log-hours">${fmtHours(log.duration_hours)}</span>
+              <span>${fmtDate(log.logged_at)}${temp}</span>
+            </div>
+            ${feedbackChips(log.feedback)}
+          </div>`;
+      }).join('');
+    }
+
+    function renderRacket(data) {
+      const r = data.racket;
+      document.title = `${r.racket_model} · ${t('r.logs.title')}`;
+
+      document.getElementById('racket-title').textContent = [r.racket_brand, r.racket_model].filter(Boolean).join(' ');
+      document.getElementById('k-main').textContent = lineText({
+        brand: r.main_brand,
+        model: r.main_model,
+        tension: r.main_tension,
+      });
+
+      const hasCross = Boolean(r.cross_model);
+      document.getElementById('dt-cross').hidden = !hasCross;
+      document.getElementById('k-cross').hidden = !hasCross;
+      document.getElementById('k-cross').textContent = hasCross
+        ? lineText({ brand: r.cross_brand, model: r.cross_model, tension: r.cross_tension })
+        : '';
+
+      document.getElementById('k-strung').textContent = fmtDate(r.strung_at);
+
+      const ownerEl = document.getElementById('k-owner');
+      if (r.claimed) {
+        ownerEl.innerHTML = `${escapeHtml(t('r.claimed'))} <span class="badge ok">${escapeHtml(r.owner_email || '')}</span>`;
+      } else {
+        ownerEl.innerHTML = `${escapeHtml(t('r.unclaimed'))} <span class="badge wait">${escapeHtml(t('r.waiting'))}</span>`;
+      }
+
+      // 已认领就不再显示认领按钮
+      claimBtn.hidden = Boolean(r.claimed);
+      claimBtn.textContent = me.logged_in ? t('r.claim.btn') : t('r.claim.btnLogin');
+
+      renderLogs(data.logs || []);
+
+      // 扫过一次就记在浏览器里，之后从「本機球拍」直接进来
+      rememberRacket(r.uuid, [r.racket_brand, r.racket_model].filter(Boolean).join(' '));
+    }
+
+    async function load() {
+      try {
+        const [racketRes, meRes] = await Promise.all([
+          api(`/api/rackets/${encodeURIComponent(uuid)}`),
+          api('/api/me'),
+        ]);
+        me = meRes.data || { logged_in: false };
+
+        if (!racketRes.ok) {
+          loadingEl.hidden = true;
+          notFoundEl.hidden = false;
+          return;
+        }
+
+        current = racketRes.data;
+        loadingEl.hidden = true;
+        mainEl.hidden = false;
+        renderRacket(current);
+      } catch (error) {
+        loadingEl.hidden = true;
+        notFoundEl.hidden = false;
+      }
+    }
+
+    document.getElementById('log-btn').addEventListener('click', async () => {
+      hideMessage(logMsg);
+
+      if (!Number.isFinite(duration) || duration <= 0) {
+        return showMessage(logMsg, t('msg.durationNeeded'));
+      }
+
+      const btn = document.getElementById('log-btn');
+      btn.disabled = true;
+      const label = btn.textContent;
+      btn.textContent = t('r.log.submitting');
+
+      try {
+        // 定位拿不到就跳过，不阻断提交
+        const position = await getPosition(5000);
+        const payload = {
+          duration_hours: duration,
+          feedback: selected.size ? [...selected].join('|') : '',
+        };
+        if (position) {
+          payload.latitude = position.latitude;
+          payload.longitude = position.longitude;
+        }
+
+        const res = await api(`/api/rackets/${encodeURIComponent(uuid)}/logs`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          showError(logMsg, res.data);
+          return;
+        }
+
+        const temp = res.data.log?.temperature_c;
+        showMessage(
+          logMsg,
+          temp === null || temp === undefined
+            ? t('msg.logOkNoTemp')
+            : t('msg.logOkTemp', { temp: Number(temp).toFixed(1) }),
+          'ok',
+        );
+
+        // 回到默认状态，方便下一位客户直接用
+        duration = 1;
+        selected.clear();
+        renderDuration();
+        renderChips();
+
+        const refreshed = await api(`/api/rackets/${encodeURIComponent(uuid)}`);
+        if (refreshed.ok) renderLogs(refreshed.data.logs || []);
+      } catch (error) {
+        showMessage(logMsg, t('msg.netError'));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    });
+
+    claimBtn.addEventListener('click', async () => {
+      hideMessage(claimMsg);
+
+      if (!me.logged_in) {
+        location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
+        return;
+      }
+
+      claimBtn.disabled = true;
+      claimBtn.textContent = t('r.claim.btnBusy');
+      try {
+        const res = await api(`/api/rackets/${encodeURIComponent(uuid)}/claim`, { method: 'POST', body: '{}' });
+        if (res.ok) {
+          showMessage(claimMsg, t('msg.claimOk'), 'ok');
+          const refreshed = await api(`/api/rackets/${encodeURIComponent(uuid)}`);
+          if (refreshed.ok) {
+            current = refreshed.data;
+            renderRacket(current);
+          }
+          return;
+        }
+        showError(claimMsg, res.data);
+      } finally {
+        claimBtn.disabled = false;
+        claimBtn.textContent = me.logged_in ? t('r.claim.btn') : t('r.claim.btnLogin');
+      }
+    });
+
+
+    renderDuration();
+    renderChips();
+    load();
+  </script>
+</body>
+</html>

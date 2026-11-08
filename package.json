@@ -1,0 +1,20 @@
+{
+  "name": "racket-logger",
+  "version": "1.0.0",
+  "private": true,
+  "description": "穿线球拍使用记录：穿线师生成二维码，客户扫码匿名记录，登录后可认领",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 execute racket-logger --local --file=./schema.sql",
+    "db:remote": "wrangler d1 execute racket-logger --remote --file=./schema.sql"
+  },
+  "dependencies": {
+    "jose": "^6.1.0",
+    "qrcode-generator": "^1.4.4"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

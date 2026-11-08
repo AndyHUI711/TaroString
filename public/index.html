@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>穿線台 · 球拍記錄</title>
+  <meta name="theme-color" content="#f7f5f1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <a class="brand" href="/">TARO<span>·</span><span data-i18n="nav.desk">穿線台</span></a>
+    <nav>
+      <a href="/local" data-i18n="nav.local">本機球拍</a>
+      <a href="/my" data-i18n="nav.my">我的球拍</a>
+      <a href="/login" data-i18n="nav.login">登入</a>
+      <span id="lang-switch"></span>
+    </nav>
+  </div>
+
+  <main class="wrap">
+    <h1 data-i18n="admin.title">新穿一支拍子</h1>
+    <p class="lead" data-i18n="admin.lead">輸入球拍資訊，產生專屬 QR Code。</p>
+
+    <form class="card" id="create-form" novalidate>
+      <div class="field">
+        <label for="admin-token" data-i18n="admin.token">後台口令</label>
+        <input type="password" id="admin-token" autocomplete="off" />
+        <p class="hint" data-i18n="admin.tokenHint">口令只保存在這台裝置上。</p>
+      </div>
+
+      <div class="field">
+        <label data-i18n="admin.brand">球拍品牌</label>
+        <div id="racket-brand-host"></div>
+      </div>
+
+      <div class="field">
+        <label for="racket-model" data-i18n="admin.model">球拍型號</label>
+        <input type="text" id="racket-model" data-i18n-ph="admin.modelPh" maxlength="80" />
+      </div>
+
+      <div class="section-head">
+        <span class="section-title" data-i18n="admin.mainSection">主線 · 豎線</span>
+        <span class="section-rule"></span>
+      </div>
+
+      <div class="field">
+        <label data-i18n="admin.brandLabel">品牌</label>
+        <div id="main-brand-host"></div>
+      </div>
+
+      <div class="field">
+        <label for="main-string" data-i18n="admin.stringLabel">線型號</label>
+        <div class="pair">
+          <input type="text" id="main-string" data-i18n-ph="admin.stringPh" maxlength="80" />
+          <input type="number" id="main-tension" step="0.5" min="0" max="80" placeholder="48" inputmode="decimal" />
+        </div>
+        <p class="hint" data-i18n="admin.tensionHint">支援 0.5 步進。</p>
+      </div>
+
+      <label class="switch" for="hybrid">
+        <input type="checkbox" id="hybrid" />
+        <span data-i18n="admin.hybrid">子母線（橫豎不同）</span>
+      </label>
+      <p class="hint" data-i18n="admin.hybridHint">不勾選時，橫豎用同一條線、同一磅數。</p>
+
+      <div id="cross-block" hidden>
+        <div class="section-head" style="margin-top:18px">
+          <span class="section-title" data-i18n="admin.crossSection">橫線 · 子母線</span>
+          <span class="section-rule"></span>
+        </div>
+
+        <div class="field">
+          <label data-i18n="admin.brandLabel">品牌</label>
+          <div id="cross-brand-host"></div>
+        </div>
+
+        <div class="field">
+          <label for="cross-string" data-i18n="admin.stringLabel">線型號</label>
+          <div class="pair">
+            <input type="text" id="cross-string" data-i18n-ph="admin.stringPh" maxlength="80" />
+            <input type="number" id="cross-tension" step="0.5" min="0" max="80" placeholder="46" inputmode="decimal" />
+          </div>
+        </div>
+      </div>
+
+      <button class="btn" type="submit" id="create-btn" data-i18n="admin.submit" style="margin-top:8px">產生 QR Code</button>
+      <div class="msg" id="create-msg"></div>
+    </form>
+
+    <section class="card" id="result" hidden>
+      <h2 data-i18n="admin.resultTitle">這支球拍已登記</h2>
+      <img class="qr" id="qr-img" alt="QR" />
+      <div class="field">
+        <label data-i18n="admin.scanUrl">掃碼連結</label>
+        <div class="mono" id="scan-url"></div>
+      </div>
+      <div class="field">
+        <label data-i18n="admin.uuid">球拍編號（UUID）</label>
+        <div class="mono" id="uuid-text"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn ghost small" type="button" id="copy-link" data-i18n="admin.copyLink">複製連結</button>
+        <button class="btn ghost small" type="button" id="copy-uuid" data-i18n="admin.copyId">複製編號</button>
+        <button class="btn ghost small" type="button" id="open-link" data-i18n="admin.preview">預覽頁面</button>
+      </div>
+      <div class="msg" id="copy-msg"></div>
+    </section>
+
+    <section class="card" id="recent-card" hidden>
+      <h2 data-i18n="admin.recent">本機剛產生的球拍</h2>
+      <div class="list" id="recent-list"></div>
+    </section>
+
+    <p class="foot"><span data-i18n="admin.foot">客戶掃碼後無需註冊即可記錄</span></p>
+  </main>
+
+  <script src="/i18n.js"></script>
+  <script src="/brands.js"></script>
+  <script src="/client.js"></script>
+  <script>
+    const TOKEN_KEY = 'rl_admin_token';
+    const form = document.getElementById('create-form');
+    const tokenInput = document.getElementById('admin-token');
+    const btn = document.getElementById('create-btn');
+    const msg = document.getElementById('create-msg');
+    const result = document.getElementById('result');
+    const hybridInput = document.getElementById('hybrid');
+    const crossBlock = document.getElementById('cross-block');
+    const recentCard = document.getElementById('recent-card');
+    const recentList = document.getElementById('recent-list');
+    const copyMsg = document.getElementById('copy-msg');
+
+    attachDatalist('main-string', 'string-models', STRING_MODELS);
+    attachDatalist('cross-string', 'string-models', STRING_MODELS);
+
+    const racketBrand = createBrandField({
+      brands: RACKET_BRANDS,
+      placeholder: t('admin.brandPh'),
+      otherLabel: t('admin.brandOther'),
+    });
+    document.getElementById('racket-brand-host').appendChild(racketBrand.element);
+
+    const mainBrand = createBrandField({
+      brands: STRING_BRANDS,
+      placeholder: t('admin.brandPh'),
+      otherLabel: t('admin.brandOther'),
+    });
+    document.getElementById('main-brand-host').appendChild(mainBrand.element);
+
+    const crossBrand = createBrandField({
+      brands: STRING_BRANDS,
+      placeholder: t('admin.brandPh'),
+      otherLabel: t('admin.brandOther'),
+    });
+    document.getElementById('cross-brand-host').appendChild(crossBrand.element);
+
+    const savedToken = sessionStorage.getItem(TOKEN_KEY);
+    if (savedToken) tokenInput.value = savedToken;
+
+    hybridInput.addEventListener('change', () => {
+      crossBlock.hidden = !hybridInput.checked;
+    });
+
+    function renderRecent() {
+      const list = listLocalRackets();
+      if (!list.length) {
+        recentCard.hidden = true;
+        return;
+      }
+      recentCard.hidden = false;
+      recentList.innerHTML = list.slice(0, 5).map((item) => `
+        <a class="item" href="/r/${item.uuid}">
+          <div class="item-title">
+            <strong>${item.model ? escapeHtml(item.model) : escapeHtml(t('local.fallback', { id: item.uuid.slice(0, 8) }))}</strong>
+            <span class="item-side">${t('admin.open')}</span>
+          </div>
+          <div class="item-meta">${item.uuid.slice(0, 8)}…${item.savedAt ? ' · ' + fmtDate(item.savedAt) : ''}</div>
+        </a>`).join('');
+    }
+
+    async function copyText(text, label) {
+      try {
+        await navigator.clipboard.writeText(text);
+        showMessage(copyMsg, t('msg.copied', { label }), 'ok');
+      } catch {
+        showMessage(copyMsg, t('msg.copyFail'), 'error');
+      }
+      setTimeout(() => hideMessage(copyMsg), 2500);
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      hideMessage(msg);
+
+      const adminToken = tokenInput.value.trim();
+      const model = document.getElementById('racket-model').value.trim();
+      const mainString = document.getElementById('main-string').value.trim();
+      const mainTension = document.getElementById('main-tension').value;
+      const isHybrid = hybridInput.checked;
+      const crossString = document.getElementById('cross-string').value.trim();
+      const crossTension = document.getElementById('cross-tension').value;
+
+      if (!adminToken) return showMessage(msg, t('msg.needToken'));
+      if (!model) return showMessage(msg, t('msg.needModel'));
+      if (!mainString) return showMessage(msg, t('msg.needMainString'));
+      if (!mainTension) return showMessage(msg, t('msg.needMainTension'));
+      if (isHybrid && !crossString) return showMessage(msg, t('msg.needCrossString'));
+      if (isHybrid && !crossTension) return showMessage(msg, t('msg.needCrossTension'));
+
+      const payload = {
+        admin_token: adminToken,
+        racket_brand: racketBrand.get(),
+        racket_model: model,
+        main_brand: mainBrand.get(),
+        main_model: mainString,
+        main_tension: Number(mainTension),
+      };
+      if (isHybrid) {
+        payload.cross_brand = crossBrand.get();
+        payload.cross_model = crossString;
+        payload.cross_tension = Number(crossTension);
+      }
+
+      btn.disabled = true;
+      btn.textContent = t('admin.submitting');
+
+      try {
+        const created = await api('/api/rackets', { method: 'POST', body: JSON.stringify(payload) });
+
+        if (!created.ok) {
+          showMessage(msg, errText(created.data));
+          if (created.status === 401) tokenInput.value = '';
+          return;
+        }
+
+        sessionStorage.setItem(TOKEN_KEY, adminToken);
+
+        const label = isHybrid ? `${model} · ${mainString} / ${crossString}` : `${model} · ${mainString}`;
+        rememberRacket(created.data.uuid, label);
+
+        const qr = await api(`/api/qrcode?uuid=${encodeURIComponent(created.data.uuid)}`);
+        if (!qr.ok) {
+          showMessage(msg, errText(qr.data));
+          return;
+        }
+
+        document.getElementById('qr-img').src = qr.data.data_url;
+        document.getElementById('scan-url').textContent = qr.data.scan_url;
+        document.getElementById('uuid-text').textContent = created.data.uuid;
+        result.hidden = false;
+        result.dataset.uuid = created.data.uuid;
+        result.dataset.url = qr.data.scan_url;
+        showMessage(msg, t('msg.created'), 'ok');
+        renderRecent();
+        result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (error) {
+        showMessage(msg, t('msg.netError'));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = t('admin.submit');
+      }
+    });
+
+    document.getElementById('copy-link').addEventListener('click', () => copyText(result.dataset.url || '', t('admin.scanUrl')));
+    document.getElementById('copy-uuid').addEventListener('click', () => copyText(result.dataset.uuid || '', t('admin.uuid')));
+    document.getElementById('open-link').addEventListener('click', () => {
+      if (result.dataset.url) window.open(result.dataset.url, '_blank');
+    });
+
+    renderRecent();
+  </script>
+</body>
+</html>
