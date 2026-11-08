@@ -5,8 +5,8 @@
 --   npx wrangler d1 execute racket-logger --local  --file=./migrations/002_hybrid_strings.sql
 --   npx wrangler d1 execute racket-logger --remote --file=./migrations/002_hybrid_strings.sql
 --
--- 旧的 string_model / tension 列保留为兼容字段；新代码会继续同步写入主线值。
--- 历史数据会复制到 main_model / main_tension，不会丢失。
+-- 旧的 string_model / tension 列保留不动（新代码不再读写它们），
+-- 其值会被复制到 main_model / main_tension，历史记录不会丢。
 
 ALTER TABLE rackets ADD COLUMN racket_brand TEXT;
 ALTER TABLE rackets ADD COLUMN main_brand TEXT;

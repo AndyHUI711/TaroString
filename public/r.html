@@ -84,12 +84,41 @@
         <div class="list" id="log-list"></div>
         <div class="empty" id="log-empty" data-i18n="r.logs.empty">還沒有記錄。</div>
       </section>
+
+      <section class="card" id="advice-card" hidden>
+        <h2 data-i18n="adv.title">穿線建議</h2>
+
+        <div id="advice-empty" class="hint" hidden data-i18n="adv.noData">多打幾次之後…</div>
+
+        <div id="advice-body">
+          <div class="adv-block">
+            <div class="adv-row">
+              <span class="adv-label" data-i18n="adv.healthLabel">線的狀態</span>
+              <span class="adv-level" id="adv-level">—</span>
+            </div>
+            <div class="bar"><i id="adv-bar"></i></div>
+            <ul class="adv-why" id="adv-why-health"></ul>
+          </div>
+
+          <div class="adv-block">
+            <div class="adv-row">
+              <span class="adv-label" data-i18n="adv.tensionLabel">下次磅數</span>
+              <span class="adv-next" id="adv-next">—</span>
+            </div>
+            <div class="adv-current" id="adv-current"></div>
+            <ul class="adv-why" id="adv-why-tension"></ul>
+          </div>
+
+          <p class="hint tiny" data-i18n="adv.foot">由用量、時間、手感與氣溫推算，實際以試打為準</p>
+        </div>
+      </section>
     </div>
 
     <p class="foot" data-i18n="r.foot">資料保存在這支球拍的檔案裡</p>
   </main>
 
   <script src="/i18n.js"></script>
+  <script src="/health.js"></script>
   <script src="/client.js"></script>
   <script>
     const uuid = decodeURIComponent((location.pathname.split('/')[2] || '').trim());
@@ -160,6 +189,63 @@
       return items.length ? `<div class="fb-chips">${items.join('')}</div>` : '';
     }
 
+    const adviceCard = document.getElementById('advice-card');
+    const adviceEmpty = document.getElementById('advice-empty');
+    const adviceBody = document.getElementById('advice-body');
+    const advLevel = document.getElementById('adv-level');
+    const advBar = document.getElementById('adv-bar');
+    const advNext = document.getElementById('adv-next');
+    const advCurrent = document.getElementById('adv-current');
+    const advWhyHealth = document.getElementById('adv-why-health');
+    const advWhyTension = document.getElementById('adv-why-tension');
+
+    /** 理由里的 vars 可能带一个 i18n 键（线种），先翻再用 */
+    function reasonText(reason) {
+      const vars = Object.assign({}, reason.vars);
+      if (vars.type) vars.type = t(vars.type);
+      return t(reason.key, vars);
+    }
+
+    function renderAdvice(data) {
+      const advice = evaluateAdvice(data.racket, data.logs || []);
+      adviceCard.hidden = false;
+
+      if (!advice.enoughData) {
+        adviceEmpty.hidden = false;
+        adviceBody.hidden = true;
+        return;
+      }
+      adviceEmpty.hidden = true;
+      adviceBody.hidden = false;
+
+      const { health, tension } = advice;
+      advLevel.textContent = t(`adv.level.${health.level}`);
+      advLevel.className = `adv-level ${health.level}`;
+      advBar.style.width = `${health.score}%`;
+      advBar.className = health.level;
+
+      const healthReasons = health.reasons.map(reasonText);
+      if (health.which === 'cross') healthReasons.push(t('adv.crossNote'));
+      advWhyHealth.innerHTML = healthReasons.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
+
+      if (tension.delta === 0 || tension.nextMain === null) {
+        advNext.textContent = t('adv.tension.same');
+      } else if (tension.nextCross !== null) {
+        advNext.textContent = t('adv.tension.nextHybrid', { m: tension.nextMain, c: tension.nextCross });
+      } else {
+        advNext.textContent = t('adv.tension.next', { v: tension.nextMain });
+      }
+
+      advCurrent.textContent = tension.currentCross !== null
+        ? t('adv.tension.currentHybrid', { m: tension.currentMain, c: tension.currentCross })
+        : t('adv.tension.current', { v: tension.currentMain });
+
+      advWhyTension.innerHTML = tension.reasons
+        .map(reasonText)
+        .map((line) => `<li>${escapeHtml(line)}</li>`)
+        .join('');
+    }
+
     function renderLogs(logs) {
       const total = logs.reduce((sum, log) => sum + Number(log.duration_hours || 0), 0);
       statHoursEl.textContent = fmtHours(total);
@@ -218,6 +304,7 @@
       claimBtn.textContent = me.logged_in ? t('r.claim.btn') : t('r.claim.btnLogin');
 
       renderLogs(data.logs || []);
+      renderAdvice(data);
 
       // 扫过一次就记在浏览器里，之后从「本機球拍」直接进来
       rememberRacket(r.uuid, [r.racket_brand, r.racket_model].filter(Boolean).join(' '));
@@ -297,7 +384,11 @@
         renderChips();
 
         const refreshed = await api(`/api/rackets/${encodeURIComponent(uuid)}`);
-        if (refreshed.ok) renderLogs(refreshed.data.logs || []);
+        if (refreshed.ok) {
+          current = refreshed.data;
+          renderLogs(refreshed.data.logs || []);
+          renderAdvice(refreshed.data);
+        }
       } catch (error) {
         showMessage(logMsg, t('msg.netError'));
       } finally {

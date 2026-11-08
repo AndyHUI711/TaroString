@@ -312,9 +312,8 @@ async function createRacket(request, env) {
   await env.DB.prepare(
     `INSERT INTO rackets (uuid, racket_brand, racket_model,
                           main_brand, main_model, main_tension,
-                          cross_brand, cross_model, cross_tension,
-                          string_model, tension)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                          cross_brand, cross_model, cross_tension)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       uuid,
@@ -326,8 +325,6 @@ async function createRacket(request, env) {
       isHybrid ? crossBrand : null,
       isHybrid ? crossModel : null,
       isHybrid ? crossTension : null,
-      mainModel,
-      mainTension,
     )
     .run();
 

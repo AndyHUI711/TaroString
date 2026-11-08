@@ -9,7 +9,6 @@
 --   * rackets 增加品牌字段 racket_brand / main_brand / cross_brand
 --   * 主线、横线拆成两组独立字段：main_* 与 cross_*
 --   * 不使用子母线时 cross_* 全为 NULL（不用空字符串，便于判断）
---   * 保留 string_model / tension 作为 v1 兼容镜像，由 Worker 与主线字段同步写入
 --
 -- 若你已经用 v1 建过表，不要重跑本文件，执行 migrations/002_hybrid_strings.sql。
 
@@ -31,8 +30,6 @@ CREATE TABLE IF NOT EXISTS rackets (
   cross_brand   TEXT,
   cross_model   TEXT,
   cross_tension REAL,
-  string_model  TEXT NOT NULL, -- v1 compatibility mirror of main_model
-  tension       REAL NOT NULL, -- v1 compatibility mirror of main_tension
   strung_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   owner_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
   claimed_at    TEXT,

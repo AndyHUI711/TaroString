@@ -609,3 +609,76 @@ input[type="number"] { -webkit-appearance: none; appearance: textfield; }
   color: var(--ink-soft);
   margin-left: 5px;
 }
+
+/* 穿线建议 */
+.adv-block { margin-bottom: 18px; }
+.adv-block:last-of-type { margin-bottom: 12px; }
+
+.adv-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.adv-label {
+  font-size: 13px;
+  color: var(--ink-soft);
+  letter-spacing: 0.02em;
+}
+
+.adv-level {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.adv-level.good { color: #2f7d4f; }
+.adv-level.watch { color: #a8742a; }
+.adv-level.rest { color: #a83a2f; }
+
+.adv-next {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.bar {
+  height: 6px;
+  border-radius: 99px;
+  background: #ece8e1;
+  overflow: hidden;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 99px;
+  transition: width 0.3s ease;
+  background: var(--accent);
+}
+
+.bar i.good { background: #4f9e6b; }
+.bar i.watch { background: #c89543; }
+.bar i.rest { background: #c15a4c; }
+
+.adv-why {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink-soft);
+}
+
+.adv-why li { margin-bottom: 2px; }
+
+.adv-current {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-top: -4px;
+}
+
+@media (max-width: 420px) {
+  .adv-next { font-size: 15.5px; }
+}
