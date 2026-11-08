@@ -17,7 +17,7 @@ not_found_handling = "none"
 [[d1_databases]]
 binding = "DB"
 database_name = "racket-logger"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "3252ec5a-a6f1-4c7a-8f3c-8bdfd0ffa1c1"
 
 [vars]
 # 非敏感配置放这里；SESSION_SECRET / ADMIN_TOKEN 用 `wrangler secret put` 配置，
