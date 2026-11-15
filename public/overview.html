@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>穿線師總覽 · 穿線台</title>
+  <meta name="theme-color" content="#f7f5f1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <a class="brand" href="/">
+      <img class="brand-logo" src="/logo.jpg" alt="芋圓穿線 TARO STRINGING" width="56" height="56" />
+    </a>
+    <nav>
+      <a href="/" data-i18n="nav.desk">穿線台</a>
+      <a href="/list" data-i18n="nav.list">所有球拍</a>
+      <a href="/catalog" data-i18n="nav.catalog">球線目錄</a>
+      <span id="lang-switch"></span>
+    </nav>
+  </div>
+  <main class="wrap">
+    <h1 data-i18n="overview.title">穿線師總覽</h1>
+    <p class="lead" data-i18n="overview.lead">只統計以你的穿線師帳號記錄的穿線。</p>
+    <div class="msg" id="overview-msg" role="status"></div>
+    <section class="card" id="overview-gate" hidden>
+      <p data-i18n="overview.signin">登入穿線師帳號以查看你的總覽。</p>
+      <a href="/login?next=%2Foverview" data-i18n="overview.signinLink">登入 / 註冊</a>
+    </section>
+    <div id="overview-content" hidden>
+      <div class="stat-strip">
+        <div class="stat">
+          <div class="stat-num" id="lifetime-jobs">0</div>
+          <div class="stat-label" data-i18n="overview.lifetime">累計穿線次數（含歷史）</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num" id="recorded-jobs">0</div>
+          <div class="stat-label" data-i18n="overview.recorded">網站記錄的穿線次數</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num" id="recorded-rackets">0</div>
+          <div class="stat-label" data-i18n="overview.rackets">網站記錄的不同球拍</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num" id="historical-count">0</div>
+          <div class="stat-label" data-i18n="overview.historical">網站建立前的數量</div>
+        </div>
+      </div>
+      <p class="hint" data-i18n="overview.countHint">每次重穿都計一次；舊口令記錄未綁定帳號，不計入個人總覽。</p>
+      <section class="card">
+        <h2 data-i18n="overview.racketBrands">球拍品牌</h2>
+        <p class="hint" data-i18n="overview.racketHint">按穿線次數統計，包括重穿；不包含歷史數量。</p>
+        <div class="list" id="racket-brands"></div>
+      </section>
+      <section class="card">
+        <h2 data-i18n="overview.stringBrands">球線品牌</h2>
+        <p class="hint" data-i18n="overview.stringHint">每次穿線按所用品牌計算一次；子母線若用不同品牌會各計一次。</p>
+        <div class="list" id="string-brands"></div>
+      </section>
+      <section class="card">
+        <h2 data-i18n="overview.recent">最近穿線</h2>
+        <div class="list" id="recent-jobs"></div>
+      </section>
+      <form class="card" id="offset-form">
+        <h2 data-i18n="overview.offsetTitle">網站建立前的穿線數量</h2>
+        <p class="hint" data-i18n="overview.offsetHint">請填寫你在使用網站前穿過的數量；例如 65。只加進累計穿線次數，不分配品牌或球拍。</p>
+        <div class="field">
+          <label for="offset" data-i18n="overview.offsetLabel">歷史數量</label>
+          <input type="number" id="offset" min="0" max="1000000" step="1" inputmode="numeric" required />
+        </div>
+        <button class="btn" type="submit" data-i18n="overview.save">儲存數量</button>
+        <div class="msg" id="offset-msg" role="status"></div>
+      </form>
+    </div>
+  </main>
+  <footer class="site-foot">
+    <div>Licensed © 2026 by Andy</div>
+    <div>Tel: <a href="tel:+85265586847">+852 65586847</a></div>
+  </footer>
+  <script src="/i18n.js"></script>
+  <script src="/client.js"></script>
+  <script src="/overview.js"></script>
+</body>
+</html>

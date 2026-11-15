@@ -417,6 +417,79 @@ async function resolveStringer(request, env, body) {
   return null;
 }
 
+async function stringerOverview(request, env) {
+  const session = await getSession(request, env);
+  if (!session || !session.is_stringer) return fail('OVERVIEW_FORBIDDEN', 403, '请先以穿线师身份登录');
+
+  if (request.method === 'PUT') {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return fail('BAD_JSON', 400, '请求体必须是 JSON');
+    }
+    if (!Number.isSafeInteger(body?.historical_count) || body.historical_count < 0 || body.historical_count > 1000000) {
+      return fail('OVERVIEW_OFFSET_INVALID', 400, '历史数量须为 0 至 1000000 的整数');
+    }
+    const saved = await env.DB.prepare(
+      `INSERT INTO stringer_overview_settings (user_id, historical_count)
+       SELECT id, ? FROM users WHERE id = ? AND is_stringer = 1
+       ON CONFLICT(user_id) DO UPDATE SET historical_count = excluded.historical_count
+       RETURNING historical_count`,
+    ).bind(body.historical_count, session.id).first();
+    if (!saved) return fail('OVERVIEW_FORBIDDEN', 403, '请先以穿线师身份登录');
+    return json({ historical_count: saved.historical_count }, 200, { 'cache-control': 'no-store' });
+  }
+
+  const user = await env.DB.prepare(
+    `SELECT s.historical_count FROM users u
+     LEFT JOIN stringer_overview_settings s ON s.user_id = u.id
+     WHERE u.id = ? AND u.is_stringer = 1`,
+  ).bind(session.id).first();
+  if (!user) return fail('OVERVIEW_FORBIDDEN', 403, '请先以穿线师身份登录');
+
+  const totals = await env.DB.prepare(
+    `SELECT COUNT(*) AS jobs, COUNT(DISTINCT racket_id) AS rackets
+     FROM string_jobs WHERE stringer_id = ?`,
+  ).bind(session.id).first();
+  const racketBrands = await env.DB.prepare(
+    `SELECT NULLIF(trim(r.racket_brand), '') AS brand, COUNT(*) AS jobs
+     FROM string_jobs j JOIN rackets r ON r.id = j.racket_id
+     WHERE j.stringer_id = ?
+     GROUP BY NULLIF(trim(r.racket_brand), '') COLLATE NOCASE
+     ORDER BY jobs DESC, brand COLLATE NOCASE`,
+  ).bind(session.id).all();
+  const stringBrands = await env.DB.prepare(
+    `WITH job_brands AS (
+       SELECT id, NULLIF(trim(main_brand), '') COLLATE NOCASE AS brand
+       FROM string_jobs WHERE stringer_id = ?
+       UNION
+       SELECT id, NULLIF(trim(cross_brand), '') COLLATE NOCASE AS brand
+       FROM string_jobs WHERE stringer_id = ? AND cross_model IS NOT NULL
+     )
+     SELECT brand, COUNT(*) AS jobs FROM job_brands
+     GROUP BY brand COLLATE NOCASE ORDER BY jobs DESC, brand COLLATE NOCASE`,
+  ).bind(session.id, session.id).all();
+  const recent = await env.DB.prepare(
+    `SELECT r.uuid, r.racket_brand, r.racket_model,
+            j.main_brand, j.main_model, j.cross_brand, j.cross_model, j.strung_at
+     FROM string_jobs j JOIN rackets r ON r.id = j.racket_id
+     WHERE j.stringer_id = ?
+     ORDER BY j.strung_at DESC, j.id DESC LIMIT 10`,
+  ).bind(session.id).all();
+  const historicalCount = user.historical_count ?? 0;
+  return json({
+    historical_count: historicalCount,
+    offset_configured: user.historical_count !== null,
+    recorded_jobs: totals.jobs,
+    recorded_rackets: totals.rackets,
+    lifetime_jobs: totals.jobs + historicalCount,
+    racket_brands: racketBrands.results,
+    string_brands: stringBrands.results,
+    recent_jobs: recent.results,
+  }, 200, { 'cache-control': 'no-store' });
+}
+
 async function getCatalog(env) {
   const brands = await env.DB.prepare(
     'SELECT id, kind, name FROM brands ORDER BY name COLLATE NOCASE',
@@ -970,6 +1043,7 @@ async function diagHandler(env) {
     users_v4: false,
     jobs_v4: false,
     catalog_v6: false,
+    overview_v7: false,
     schema_version: null,
   };
 
@@ -988,13 +1062,15 @@ async function diagHandler(env) {
   checks.jobs_v4 = await probe('SELECT stringer_name FROM string_jobs LIMIT 1');
   checks.catalog_v6 = (await probe('SELECT id, kind, name FROM brands LIMIT 1'))
     && (await probe('SELECT id, brand_id, power, control, spin, durability FROM string_models LIMIT 1'));
+  checks.overview_v7 = await probe('SELECT user_id, historical_count FROM stringer_overview_settings LIMIT 1');
 
   if (!checks.rackets_table) checks.schema_version = 0;
   else if (!checks.string_jobs_table) checks.schema_version = 2;
   else if (!checks.users_v4 || !checks.jobs_v4) checks.schema_version = 3;
-  else checks.schema_version = checks.catalog_v6 ? 6 : 4;
+  else if (!checks.catalog_v6) checks.schema_version = 4;
+  else checks.schema_version = checks.overview_v7 ? 7 : 6;
 
-  checks.ok = checks.schema_version === 6 && checks.session_secret_configured;
+  checks.ok = checks.schema_version === 7 && checks.session_secret_configured;
   return json(checks);
 }
 
@@ -1036,6 +1112,7 @@ async function handleApi(request, env, url) {
   if (path === '/api/me' && method === 'GET') return whoAmI(request, env);
   if (path === '/api/qrcode' && method === 'GET') return qrcodeHandler(env, url);
   if (path === '/api/my' && method === 'GET') return listMyRackets(request, env);
+  if (path === '/api/overview' && (method === 'GET' || method === 'PUT')) return stringerOverview(request, env);
   if (path === '/api/catalog' && method === 'GET') return getCatalog(env);
   if (path === '/api/catalog/brands' && method === 'POST') return updateCatalog(request, env, 'brand');
   if (path === '/api/catalog/models' && method === 'POST') return updateCatalog(request, env, 'model');
@@ -1074,6 +1151,7 @@ async function handlePage(request, env, url) {
     '/local': '/local.html',
     '/list': '/list.html',
     '/catalog': '/catalog.html',
+    '/overview': '/overview.html',
   };
 
   const target = path === '/r' || path.startsWith('/r/') ? '/r.html' : pages[path];
@@ -1097,7 +1175,7 @@ export default {
 
         // 最常见的一种「全部接口都挂」：代码升级了但迁移没跑
         if (/no such table|no such column/i.test(message)) {
-          return fail('SCHEMA_OUTDATED', 500, '数据库结构还没升级，请先执行所需迁移（包括 006）', {
+          return fail('SCHEMA_OUTDATED', 500, '数据库结构还没升级，请先执行所需迁移（包括 007）', {
             hint: 'run_migrations',
             diag: '/api/diag',
           });

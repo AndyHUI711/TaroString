@@ -1,4 +1,4 @@
--- 穿线球拍记录 · D1 (SQLite) 表结构 · v4
+-- 穿线球拍记录 · D1 (SQLite) 表结构 · v7
 --
 -- v3 核心变化：把「球拍」和「穿线」拆成两层
 --   rackets      放长期不变的球拍信息与球拍码（uuid）。这个码贴在拍框上，重穿也不换。
@@ -16,6 +16,7 @@
 --   v3 -> v4：migrations/004_stringer_accounts.sql
 --   legacy v1 string columns left on rackets: migrations/005_drop_legacy_racket_strings.sql
 --   brand catalog and string performance: migrations/006_brand_catalog.sql
+--   stringer overview settings: migrations/007_stringer_overview.sql
 
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,6 +69,13 @@ CREATE INDEX IF NOT EXISTS idx_logs_uuid ON usage_logs(racket_uuid);
 CREATE INDEX IF NOT EXISTS idx_logs_job ON usage_logs(string_job_id);
 CREATE INDEX IF NOT EXISTS idx_rackets_owner ON rackets(owner_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_racket ON string_jobs(racket_id, strung_at DESC);
+CREATE INDEX IF NOT EXISTS idx_jobs_stringer ON string_jobs(stringer_id);
+
+CREATE TABLE IF NOT EXISTS stringer_overview_settings (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  historical_count INTEGER NOT NULL DEFAULT 0
+    CHECK (typeof(historical_count) = 'integer' AND historical_count BETWEEN 0 AND 1000000)
+);
 
 CREATE TABLE IF NOT EXISTS brands (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

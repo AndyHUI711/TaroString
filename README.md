@@ -11,6 +11,7 @@
 
 穿线师这边支持：**球拍品牌**、**球线品牌**下拉（最后一项「其他品牌…」可手输）、**主线 / 横线分别填写型号与磅数**（不勾「子母线」时横竖同线同磅）。
 公开的球线目录提供穿线师填写的力量、控制、旋转和耐用度评分；登录的穿线师可以维护品牌和球线型号。
+穿线师可在 `/overview` 查看自己的穿线次数、不同球拍数、品牌统计与最近记录，并设置网站建立前的历史数量。
 
 ---
 
@@ -45,6 +46,8 @@ racket-logger/
 │  ├─ local.html         # /local   本机球拍（浏览器留存）
 │  ├─ catalog.html       # /catalog 公开球线目录和穿线师维护表单
 │  ├─ catalog.js         # 目录加载、显示及维护
+│  ├─ overview.html      # /overview 穿线师个人总览
+│  ├─ overview.js        # 统计显示和历史数量设置
 │  ├─ client.js          # 接口封装、本机留存、定位、提示
 │  ├─ i18n.js            # 繁體 / 简体 / English 字典 + 语言切换 + 日期磅数格式化
 │  ├─ brands.js          # 常用线型号建议 + 品牌下拉控件
@@ -55,7 +58,8 @@ racket-logger/
 │  ├─ 003_string_jobs.sql      # v2 -> v3：球拍 ID 与穿线 ID 拆成两层
 │  ├─ 004_stringer_accounts.sql # v3 -> v4：穿线师账号字段
 │  ├─ 005_drop_legacy_racket_strings.sql # 清理旧球拍线字段
-│  └─ 006_brand_catalog.sql # 品牌与球线性能目录
+│  ├─ 006_brand_catalog.sql # 品牌与球线性能目录
+│  └─ 007_stringer_overview.sql # 穿线师历史数量
 └─ package.json
 ```
 
@@ -615,6 +619,21 @@ npx wrangler d1 execute racket-logger --remote --file=./migrations/006_brand_cat
 所有访客可在 `/catalog` 查看球线性能。登录的穿线师可新增球拍品牌、球线品牌和球线型号，并为每个型号填写可选的 1–5 整数评分（力量、控制、旋转、耐用度）；选择已有型号的「编辑评分」可修改或清空评分。相同品牌和型号再次保存会更新其评分。目录管理需要穿线师账号登录，单独使用旧后台口令不能修改目录。评分是穿线师提供的参考值，不是自动计算结果。
 
 目录及迁移回归测试：Node.js 24 下运行 `node --test tests/catalog.test.js`。
+
+### 穿线师个人总览
+
+先对现有数据库按顺序执行所需迁移（包括 006），再执行：
+
+```bash
+npx wrangler d1 execute racket-logger --remote --file=./migrations/007_stringer_overview.sql
+npx wrangler deploy
+```
+
+新数据库直接使用 `schema.sql`。登录穿线师后打开 `/overview`，在「网站建立前的穿线数量」保存 `65`；首次填写建议值为 65，但必须保存才会加到该账号的累计穿线次数。每个穿线师的历史数量独立，其他账号不会自动加 65。
+
+累计穿线次数 = 该账号在网站记录的穿线次数 + 已保存的历史数量。重复穿同一支球拍算多次穿线，但「不同球拍」只算一支。历史数量不分配品牌、不计入网站的不同球拍数；旧口令创建但没有关联穿线师账号的记录也不计入个人总览。品牌统计按网站记录的穿线次数计算；混合穿线不同的主、横线品牌各计一次，同一品牌只计一次，未填写品牌会单独显示。最近记录按穿线日期排序。
+
+回归测试：Node.js 24 下运行 `node --test tests/overview.test.js tests/catalog.test.js`。部署后 `/api/diag` 应显示 `overview_v7: true` 和 `schema_version: 7`。
 
 ### 12.5 這一版的驗收
 
