@@ -22,6 +22,8 @@ const FEEDBACK_KEYS = [
 
 const DICT = {
   'zh-Hant': {
+    'nav.menu': '選單',
+    'nav.navigation': '網站導覽',
     'nav.overview': '穿線師總覽',
     'overview.title': '穿線師總覽',
     'overview.lead': '只統計以你的穿線師帳號記錄的穿線。',
@@ -336,6 +338,8 @@ const DICT = {
   },
 
   'zh-Hans': {
+    'nav.menu': '菜单',
+    'nav.navigation': '网站导航',
     'nav.overview': '穿线师总览',
     'overview.title': '穿线师总览',
     'overview.lead': '只统计以你的穿线师账号记录的穿线。',
@@ -650,6 +654,8 @@ const DICT = {
   },
 
   en: {
+    'nav.menu': 'Menu',
+    'nav.navigation': 'Site navigation',
     'nav.overview': 'Stringer overview',
     'overview.title': 'Stringer overview',
     'overview.lead': 'Your overview includes jobs recorded under your stringer account.',
