@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>球線目錄 · 穿線台</title>
+  <meta name="theme-color" content="#f7f5f1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <a class="brand" href="/">
+      <img class="brand-logo" src="/logo.jpg" alt="芋圓穿線 TARO STRINGING" width="56" height="56" />
+    </a>
+    <nav>
+      <a href="/" data-i18n="nav.desk">穿線台</a>
+      <a href="/local" data-i18n="nav.local">本機球拍</a>
+      <a href="/my" data-i18n="nav.my">我的球拍</a>
+      <span id="lang-switch"></span>
+    </nav>
+  </div>
+  <main class="wrap">
+    <h1 data-i18n="catalog.title">球線目錄</h1>
+    <p class="lead" data-i18n="catalog.lead">查看球線性能；評分由穿線師提供，僅供參考。</p>
+    <div class="msg" id="catalog-msg" role="status"></div>
+    <section class="card">
+      <h2 data-i18n="catalog.models">球線與性能</h2>
+      <div id="catalog-list"></div>
+    </section>
+    <p id="catalog-signin" hidden><a href="/login" data-i18n="catalog.signin">穿線師登入後可管理目錄</a></p>
+    <div id="catalog-admin" hidden>
+      <form class="card" id="brand-form">
+        <h2 data-i18n="catalog.addBrand">新增品牌</h2>
+        <div class="field">
+          <label for="brand-kind" data-i18n="catalog.kind">品牌類型</label>
+          <select class="select" id="brand-kind">
+            <option value="racket" data-i18n="catalog.racketBrand">球拍品牌</option>
+            <option value="string" data-i18n="catalog.stringBrand">球線品牌</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="brand-name" data-i18n="catalog.name">名稱</label>
+          <input id="brand-name" maxlength="40" required />
+        </div>
+        <button class="btn" type="submit" data-i18n="catalog.addBrand">新增品牌</button>
+        <div class="msg" id="brand-msg" role="status"></div>
+      </form>
+      <form class="card" id="model-form">
+        <h2 data-i18n="catalog.addModel">新增或更新球線</h2>
+        <p class="hint" data-i18n="catalog.ratingHint">評分可留空，或選擇 1–5；同品牌同型號會更新現有評分。</p>
+        <div class="field">
+          <label for="model-brand" data-i18n="catalog.stringBrand">球線品牌</label>
+          <select class="select" id="model-brand" required></select>
+        </div>
+        <div class="field">
+          <label for="model-name" data-i18n="catalog.modelName">球線型號</label>
+          <input id="model-name" maxlength="80" required />
+        </div>
+        <div class="catalog-ratings" id="rating-fields"></div>
+        <button class="btn" type="submit" data-i18n="catalog.saveModel">儲存球線</button>
+        <div class="msg" id="model-msg" role="status"></div>
+      </form>
+    </div>
+  </main>
+  <footer class="site-foot">
+    <div>Licensed © 2026 by Andy</div>
+    <div>Tel: <a href="tel:+85265586847">+852 65586847</a></div>
+  </footer>
+  <script src="/i18n.js"></script>
+  <script src="/client.js"></script>
+  <script src="/catalog.js"></script>
+</body>
+</html>

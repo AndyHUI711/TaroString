@@ -417,6 +417,70 @@ async function resolveStringer(request, env, body) {
   return null;
 }
 
+async function getCatalog(env) {
+  const brands = await env.DB.prepare(
+    'SELECT id, kind, name FROM brands ORDER BY name COLLATE NOCASE',
+  ).all();
+  const models = await env.DB.prepare(
+    `SELECT m.id, m.brand_id, b.name AS brand, m.name, m.power, m.control, m.spin, m.durability
+       FROM string_models m JOIN brands b ON b.id = m.brand_id
+      WHERE b.kind = 'string'
+      ORDER BY b.name COLLATE NOCASE, m.name COLLATE NOCASE`,
+  ).all();
+  return json({ brands: brands.results, models: models.results });
+}
+
+async function updateCatalog(request, env, type) {
+  const session = await getSession(request, env);
+  if (!session || !session.is_stringer) return fail('CATALOG_FORBIDDEN', 403, '请先以穿线师身份登录');
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return fail('BAD_JSON', 400, '请求体必须是 JSON');
+  }
+  const name = typeof body?.name === 'string' ? body.name.trim() : '';
+  const maxLength = type === 'brand' ? 40 : 80;
+  if (!name || name.length > maxLength) {
+    return fail('CATALOG_NAME_INVALID', 400, '名称为空或过长');
+  }
+
+  if (type === 'brand') {
+    if (!['racket', 'string'].includes(body.kind)) return fail('CATALOG_KIND_INVALID', 400, '品牌类型无效');
+    const inserted = await env.DB.prepare(
+      'INSERT INTO brands (kind, name) VALUES (?, ?) ON CONFLICT(kind, name) DO NOTHING RETURNING id, kind, name',
+    ).bind(body.kind, name).first();
+    if (!inserted) return fail('CATALOG_BRAND_EXISTS', 409, '品牌已存在');
+    return json({ brand: inserted }, 201);
+  }
+
+  if (!Number.isSafeInteger(body.brand_id) || body.brand_id <= 0) {
+    return fail('CATALOG_BRAND_INVALID', 400, '请选择球线品牌');
+  }
+  const brand = await env.DB.prepare("SELECT id FROM brands WHERE id = ? AND kind = 'string'")
+    .bind(body.brand_id).first();
+  if (!brand) return fail('CATALOG_BRAND_INVALID', 400, '请选择球线品牌');
+
+  const ratings = [];
+  for (const key of ['power', 'control', 'spin', 'durability']) {
+    const value = body[key];
+    if (value !== null && value !== undefined && (!Number.isInteger(value) || value < 1 || value > 5)) {
+      return fail('CATALOG_RATING_INVALID', 400, '评分须为 1 至 5 的整数或留空');
+    }
+    ratings.push(value ?? null);
+  }
+  const model = await env.DB.prepare(
+    `INSERT INTO string_models (brand_id, name, power, control, spin, durability)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(brand_id, name) DO UPDATE SET
+       power = excluded.power, control = excluded.control,
+       spin = excluded.spin, durability = excluded.durability
+     RETURNING id, brand_id, name, power, control, spin, durability`,
+  ).bind(body.brand_id, name, ...ratings).first();
+  return json({ model });
+}
+
 async function createRacket(request, env) {
   let body;
   try {
@@ -905,6 +969,7 @@ async function diagHandler(env) {
     string_jobs_table: false,
     users_v4: false,
     jobs_v4: false,
+    catalog_v6: false,
     schema_version: null,
   };
 
@@ -921,13 +986,15 @@ async function diagHandler(env) {
   checks.string_jobs_table = await probe('SELECT id FROM string_jobs LIMIT 1');
   checks.users_v4 = await probe('SELECT display_name FROM users LIMIT 1');
   checks.jobs_v4 = await probe('SELECT stringer_name FROM string_jobs LIMIT 1');
+  checks.catalog_v6 = (await probe('SELECT id, kind, name FROM brands LIMIT 1'))
+    && (await probe('SELECT id, brand_id, power, control, spin, durability FROM string_models LIMIT 1'));
 
   if (!checks.rackets_table) checks.schema_version = 0;
   else if (!checks.string_jobs_table) checks.schema_version = 2;
   else if (!checks.users_v4 || !checks.jobs_v4) checks.schema_version = 3;
-  else checks.schema_version = 4;
+  else checks.schema_version = checks.catalog_v6 ? 6 : 4;
 
-  checks.ok = checks.schema_version === 4 && checks.session_secret_configured;
+  checks.ok = checks.schema_version === 6 && checks.session_secret_configured;
   return json(checks);
 }
 
@@ -969,6 +1036,9 @@ async function handleApi(request, env, url) {
   if (path === '/api/me' && method === 'GET') return whoAmI(request, env);
   if (path === '/api/qrcode' && method === 'GET') return qrcodeHandler(env, url);
   if (path === '/api/my' && method === 'GET') return listMyRackets(request, env);
+  if (path === '/api/catalog' && method === 'GET') return getCatalog(env);
+  if (path === '/api/catalog/brands' && method === 'POST') return updateCatalog(request, env, 'brand');
+  if (path === '/api/catalog/models' && method === 'POST') return updateCatalog(request, env, 'model');
   if (path === '/api/rackets' && method === 'POST') return createRacket(request, env);
   if (path === '/api/rackets/lookup' && method === 'POST') return lookupRackets(request, env);
   if (path === '/api/rackets/list' && method === 'POST') return listAllRackets(request, env);
@@ -1003,6 +1073,7 @@ async function handlePage(request, env, url) {
     '/my': '/my.html',
     '/local': '/local.html',
     '/list': '/list.html',
+    '/catalog': '/catalog.html',
   };
 
   const target = path === '/r' || path.startsWith('/r/') ? '/r.html' : pages[path];
@@ -1026,7 +1097,7 @@ export default {
 
         // 最常见的一种「全部接口都挂」：代码升级了但迁移没跑
         if (/no such table|no such column/i.test(message)) {
-          return fail('SCHEMA_OUTDATED', 500, '数据库结构还没升级，请先执行 migrations/003 与 004', {
+          return fail('SCHEMA_OUTDATED', 500, '数据库结构还没升级，请先执行所需迁移（包括 006）', {
             hint: 'run_migrations',
             diag: '/api/diag',
           });

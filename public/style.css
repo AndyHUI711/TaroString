@@ -44,14 +44,21 @@ body {
 }
 
 .brand {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--ink);
+  display: flex;
+  align-items: center;
   text-decoration: none;
 }
 
-.brand span { color: var(--accent); }
+.brand-logo {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+.catalog-item { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.catalog-item:last-child { border-bottom: 0; }
+.catalog-ratings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
 
 .topbar nav {
   display: flex;

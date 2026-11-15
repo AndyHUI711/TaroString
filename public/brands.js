@@ -1,60 +1,10 @@
 /**
- * 品牌 / 线型号的候选项。
+ * 线型号的建议项和品牌控件。
  *
  * 全部是「建议值」而不是约束：品牌下拉最后一项是「其他品牌…」，选中后可以自己输入；
  * 线型号输入框带 datalist，既能选常用型号，也能直接手打新型号。
- * 想加自己的常用清单，直接改下面三个数组即可。
+ * 品牌来自数据库；历史线型号建议仍可自由输入。
  */
-
-const RACKET_BRANDS = [
-  'Yonex',
-  'Babolat',
-  'Wilson',
-  'HEAD',
-  'Prince',
-  'Tecnifibre',
-  'Dunlop',
-  'Solinco',
-  'Volkl',
-  'Diadem',
-  'Angell',
-  'Slazenger',
-  'ProKennex',
-  'Pacific',
-  'Fischer',
-  'Kawasaki',
-  'Victor',
-  'Li-Ning',
-];
-
-const STRING_BRANDS = [
-  'Luxilon',
-  'Babolat',
-  'Tecnifibre',
-  'Solinco',
-  'Wilson',
-  'HEAD',
-  'Yonex',
-  'Taan',
-  'Prince',
-  'Kirschbaum',
-  'Signum Pro',
-  'Volkl',
-  'Gosen',
-  'Gamma',
-  'Ashaway',
-  'MSV',
-  'IsoSpeed',
-  'Toalson',
-  'Polyfibre',
-  "Pro's Pro",
-  'Oehms',
-  'Alpha',
-  'L-Tec',
-  'Mayami',
-  'Toroline',
-  'Ytex',
-];
 
 // 常用线型号，仅作输入建议（datalist）
 const STRING_MODELS = [
@@ -107,7 +57,8 @@ const STRING_MODELS = [
  * 返回 { get(), set(value), element }
  */
 function createBrandField(options) {
-  const { brands, placeholder, otherLabel, value } = options;
+  const { placeholder, otherLabel, value } = options;
+  let brands = options.brands;
 
   const wrap = document.createElement('div');
   wrap.className = 'brand-field';
@@ -120,17 +71,9 @@ function createBrandField(options) {
   empty.textContent = placeholder;
   select.appendChild(empty);
 
-  brands.forEach((brand) => {
-    const option = document.createElement('option');
-    option.value = brand;
-    option.textContent = brand;
-    select.appendChild(option);
-  });
-
   const otherOption = document.createElement('option');
   otherOption.value = '__other__';
   otherOption.textContent = otherLabel;
-  select.appendChild(otherOption);
 
   const input = document.createElement('input');
   input.type = 'text';
@@ -141,7 +84,7 @@ function createBrandField(options) {
   wrap.append(select, input);
 
   select.addEventListener('change', () => {
-    input.hidden = select.value !== '__other__';
+    input.hidden = select.selectedOptions[0] !== otherOption;
     if (!input.hidden) input.focus();
   });
 
@@ -157,20 +100,35 @@ function createBrandField(options) {
       input.hidden = true;
       input.value = '';
     } else {
-      select.value = '__other__';
+      otherOption.selected = true;
       input.hidden = false;
       input.value = next;
     }
   }
 
   function get() {
-    if (select.value === '__other__') return input.value.trim();
+    if (select.selectedOptions[0] === otherOption) return input.value.trim();
     return select.value;
   }
 
+  function setBrands(next) {
+    const current = get();
+    brands = next;
+    select.replaceChildren(empty);
+    brands.forEach((brand) => {
+      const option = document.createElement('option');
+      option.value = brand;
+      option.textContent = brand;
+      select.appendChild(option);
+    });
+    select.appendChild(otherOption);
+    set(current);
+  }
+
+  setBrands(brands);
   if (value) set(value);
 
-  return { element: wrap, get, set };
+  return { element: wrap, get, set, setBrands };
 }
 
 /** 给指定 id 的 input 挂上共用 datalist */

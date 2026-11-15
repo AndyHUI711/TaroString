@@ -10,6 +10,7 @@
 - 费用：Workers Free + D1 Free + 一个域名，月费 0
 
 穿线师这边支持：**球拍品牌**、**球线品牌**下拉（最后一项「其他品牌…」可手输）、**主线 / 横线分别填写型号与磅数**（不勾「子母线」时横竖同线同磅）。
+公开的球线目录提供穿线师填写的力量、控制、旋转和耐用度评分；登录的穿线师可以维护品牌和球线型号。
 
 ---
 
@@ -42,14 +43,19 @@ racket-logger/
 │  ├─ login.html         # /login   登录 / 注册切换
 │  ├─ my.html            # /my      我的球拍（云端数据）
 │  ├─ local.html         # /local   本机球拍（浏览器留存）
+│  ├─ catalog.html       # /catalog 公开球线目录和穿线师维护表单
+│  ├─ catalog.js         # 目录加载、显示及维护
 │  ├─ client.js          # 接口封装、本机留存、定位、提示
 │  ├─ i18n.js            # 繁體 / 简体 / English 字典 + 语言切换 + 日期磅数格式化
-│  ├─ brands.js          # 球拍品牌、球线品牌、常用线型号清单 + 品牌下拉控件
+│  ├─ brands.js          # 常用线型号建议 + 品牌下拉控件
 │  ├─ health.js          # 穿线建议：健康度 + 温度/手感修正磅数（纯前端计算）
 │  └─ style.css
 ├─ migrations/
 │  ├─ 002_hybrid_strings.sql   # v1 -> v2：品牌 + 子母线
-│  └─ 003_string_jobs.sql      # v2 -> v3：球拍 ID 与穿线 ID 拆成两层
+│  ├─ 003_string_jobs.sql      # v2 -> v3：球拍 ID 与穿线 ID 拆成两层
+│  ├─ 004_stringer_accounts.sql # v3 -> v4：穿线师账号字段
+│  ├─ 005_drop_legacy_racket_strings.sql # 清理旧球拍线字段
+│  └─ 006_brand_catalog.sql # 品牌与球线性能目录
 └─ package.json
 ```
 
@@ -262,10 +268,10 @@ npx wrangler d1 export racket-logger --remote --output=backup-2026-11-07.sql
 
 ### 10.1 球拍品牌与球线品牌
 
-- 前端的候选项都在 `public/brands.js` 里：`RACKET_BRANDS`、`STRING_BRANDS`、`STRING_MODELS`。
+- 品牌建议来自数据库；登录的穿线师可在 `/catalog` 新增球拍或球线品牌。
 - 品牌控件是「下拉 + 其他品牌手输」：下拉最后一项是「其他品牌…」，选中后旁边出现输入框，想加新品牌可以不改代码直接手输。
 - 线型号输入框都挂了 `datalist`（`STRING_MODELS`），常用型号可以直接选，也可以手打新型号。清单只是**建议值**，后端不做白名单校验 —— 以后出了新线不用发版。
-- 想扩自己的常用清单，直接编辑 `brands.js` 里那三个数组，刷新页面即生效（没有构建步骤）。
+- 既有常用线型号建议保留在 `brands.js`；目录中新增的型号也会出现在建议列表中。
 
 ### 10.2 子母线（横竖不同线、不同磅数）
 
@@ -581,6 +587,7 @@ Tel: +852 65586847        ← 手機點一下直接撥號（tel: 連結）
 # 1) 先跑遷移（003 若之前沒跑也要跑）
 npx wrangler d1 execute racket-logger --remote --file=./migrations/003_string_jobs.sql
 npx wrangler d1 execute racket-logger --remote --file=./migrations/004_stringer_accounts.sql
+npx wrangler d1 execute racket-logger --remote --file=./migrations/005_drop_legacy_racket_strings.sql
 
 # 2) 再部署
 npx wrangler deploy
@@ -592,6 +599,22 @@ curl https://你的域名/api/diag
 `004_stringer_accounts.sql` 只做兩件事：`users` 加 `display_name` / `is_stringer`，`string_jobs` 加 `stringer_id` / `stringer_name`。老帳號的名字是空的，前端會回落郵箱前綴；想要穿線權限，重新在 `/login` 勾一次「我是穿線師」把口令驗一遍即可（或直接用 `admin_token` 兜底）。
 
 > 注意：登入憑證（JWT）裡現在也帶了名字與身分。舊 cookie 還是能登入，但 `is_stringer` 是 false，重新登入一次就正常。
+
+`005_drop_legacy_racket_strings.sql` removes the v1 `string_model` and `tension` columns left on `rackets`. Run it only after migration 003 has copied the old string details into `string_jobs`; the current Worker no longer writes those legacy columns.
+
+### 品牌与球线性能目录
+
+现有数据库在部署新版代码前执行一次（本地测试时将 `--remote` 换为 `--local`）：
+
+```bash
+npx wrangler d1 execute racket-logger --remote --file=./migrations/006_brand_catalog.sql
+```
+
+新数据库使用 `schema.sql` 即可。迁移导入原有品牌清单，以及历史球拍和穿线记录中的自定义品牌；不修改历史记录。旧的型号建议仍可自由输入，不会自动猜测其品牌或评分。
+
+所有访客可在 `/catalog` 查看球线性能。登录的穿线师可新增球拍品牌、球线品牌和球线型号，并为每个型号填写可选的 1–5 整数评分（力量、控制、旋转、耐用度）；选择已有型号的「编辑评分」可修改或清空评分。相同品牌和型号再次保存会更新其评分。目录管理需要穿线师账号登录，单独使用旧后台口令不能修改目录。评分是穿线师提供的参考值，不是自动计算结果。
+
+目录及迁移回归测试：Node.js 24 下运行 `node --test tests/catalog.test.js`。
 
 ### 12.5 這一版的驗收
 

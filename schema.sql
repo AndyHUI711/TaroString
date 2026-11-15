@@ -14,6 +14,8 @@
 --   v1 -> v2：migrations/002_hybrid_strings.sql
 --   v2 -> v3：migrations/003_string_jobs.sql
 --   v3 -> v4：migrations/004_stringer_accounts.sql
+--   legacy v1 string columns left on rackets: migrations/005_drop_legacy_racket_strings.sql
+--   brand catalog and string performance: migrations/006_brand_catalog.sql
 
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,3 +68,38 @@ CREATE INDEX IF NOT EXISTS idx_logs_uuid ON usage_logs(racket_uuid);
 CREATE INDEX IF NOT EXISTS idx_logs_job ON usage_logs(string_job_id);
 CREATE INDEX IF NOT EXISTS idx_rackets_owner ON rackets(owner_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_racket ON string_jobs(racket_id, strung_at DESC);
+
+CREATE TABLE IF NOT EXISTS brands (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL CHECK (kind IN ('racket', 'string')),
+  name TEXT NOT NULL COLLATE NOCASE CHECK (length(trim(name)) BETWEEN 1 AND 40),
+  UNIQUE (kind, name)
+);
+
+CREATE TABLE IF NOT EXISTS string_models (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  brand_id INTEGER NOT NULL REFERENCES brands(id),
+  name TEXT NOT NULL COLLATE NOCASE CHECK (length(trim(name)) BETWEEN 1 AND 80),
+  power INTEGER CHECK (power IS NULL OR (typeof(power) = 'integer' AND power BETWEEN 1 AND 5)),
+  control INTEGER CHECK (control IS NULL OR (typeof(control) = 'integer' AND control BETWEEN 1 AND 5)),
+  spin INTEGER CHECK (spin IS NULL OR (typeof(spin) = 'integer' AND spin BETWEEN 1 AND 5)),
+  durability INTEGER CHECK (durability IS NULL OR (typeof(durability) = 'integer' AND durability BETWEEN 1 AND 5)),
+  UNIQUE (brand_id, name)
+);
+
+INSERT OR IGNORE INTO brands (kind, name) VALUES
+  ('racket', 'Yonex'), ('racket', 'Babolat'), ('racket', 'Wilson'),
+  ('racket', 'HEAD'), ('racket', 'Prince'), ('racket', 'Tecnifibre'),
+  ('racket', 'Dunlop'), ('racket', 'Solinco'), ('racket', 'Volkl'),
+  ('racket', 'Diadem'), ('racket', 'Angell'), ('racket', 'Slazenger'),
+  ('racket', 'ProKennex'), ('racket', 'Pacific'), ('racket', 'Fischer'),
+  ('racket', 'Kawasaki'), ('racket', 'Victor'), ('racket', 'Li-Ning'),
+  ('string', 'Luxilon'), ('string', 'Babolat'), ('string', 'Tecnifibre'),
+  ('string', 'Solinco'), ('string', 'Wilson'), ('string', 'HEAD'),
+  ('string', 'Yonex'), ('string', 'Taan'), ('string', 'Prince'),
+  ('string', 'Kirschbaum'), ('string', 'Signum Pro'), ('string', 'Volkl'),
+  ('string', 'Gosen'), ('string', 'Gamma'), ('string', 'Ashaway'),
+  ('string', 'MSV'), ('string', 'IsoSpeed'), ('string', 'Toalson'),
+  ('string', 'Polyfibre'), ('string', 'Pro''s Pro'), ('string', 'Oehms'),
+  ('string', 'Alpha'), ('string', 'L-Tec'), ('string', 'Mayami'),
+  ('string', 'Toroline'), ('string', 'Ytex');

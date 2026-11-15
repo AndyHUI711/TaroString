@@ -9,8 +9,11 @@
 </head>
 <body>
   <div class="topbar">
-    <a class="brand" href="/">TARO<span>·</span><span data-i18n="nav.desk">穿線台</span></a>
+    <a class="brand" href="/">
+      <img class="brand-logo" src="/logo.jpg" alt="芋圓穿線 TARO STRINGING" width="56" height="56" />
+    </a>
     <nav>
+      <a href="/catalog" data-i18n="nav.catalog">球線目錄</a>
       <a href="/list" data-i18n="nav.list">所有球拍</a>
       <a href="/local" data-i18n="nav.local">本機球拍</a>
       <a href="/my" data-i18n="nav.my">我的球拍</a>
@@ -22,6 +25,7 @@
   <main class="wrap">
     <h1 id="page-title" data-i18n="admin.title">新穿一支拍子</h1>
     <p class="lead" id="page-lead" data-i18n="admin.lead">輸入球拍資訊，產生專屬 QR Code。</p>
+    <div class="msg" id="catalog-msg" role="status"></div>
 
     <div class="notice slim" id="restring-banner" hidden>
       <span aria-hidden="true">↻</span>
@@ -199,25 +203,44 @@
     attachDatalist('cross-string', 'string-models', STRING_MODELS);
 
     const racketBrand = createBrandField({
-      brands: RACKET_BRANDS,
+      brands: [],
       placeholder: t('admin.brandPh'),
       otherLabel: t('admin.brandOther'),
     });
     document.getElementById('racket-brand-host').appendChild(racketBrand.element);
 
     const mainBrand = createBrandField({
-      brands: STRING_BRANDS,
+      brands: [],
       placeholder: t('admin.brandPh'),
       otherLabel: t('admin.brandOther'),
     });
     document.getElementById('main-brand-host').appendChild(mainBrand.element);
 
     const crossBrand = createBrandField({
-      brands: STRING_BRANDS,
+      brands: [],
       placeholder: t('admin.brandPh'),
       otherLabel: t('admin.brandOther'),
     });
     document.getElementById('cross-brand-host').appendChild(crossBrand.element);
+
+    async function loadCatalog() {
+      try {
+        const res = await api('/api/catalog');
+        if (!res.ok) {
+          showMessage(document.getElementById('catalog-msg'), errText(res.data));
+          return;
+        }
+        racketBrand.setBrands(res.data.brands.filter((brand) => brand.kind === 'racket').map((brand) => brand.name));
+        const stringBrands = res.data.brands.filter((brand) => brand.kind === 'string').map((brand) => brand.name);
+        mainBrand.setBrands(stringBrands);
+        crossBrand.setBrands(stringBrands);
+        const models = [...new Set([...STRING_MODELS, ...res.data.models.map((model) => model.name)])];
+        attachDatalist('main-string', 'string-models', models);
+        attachDatalist('cross-string', 'string-models', models);
+      } catch {
+        showMessage(document.getElementById('catalog-msg'), t('msg.netError'));
+      }
+    }
 
     const savedToken = sessionStorage.getItem(TOKEN_KEY);
     if (savedToken) tokenInput.value = savedToken;
@@ -408,6 +431,7 @@
     });
 
     loadIdentity();
+    loadCatalog();
     if (restringUuid) enterRestringMode(restringUuid);
     renderRecent();
   </script>
