@@ -373,8 +373,8 @@
       renderLogs(data.logs || []);
       renderAdvice(data);
 
-      // 穿线师这台装置存过口令，才显示「再穿一次」，客户看不到
-      if (sessionStorage.getItem('rl_admin_token')) {
+      // 穿线师这台装置存过口令，或已用穿线师账号登入，才显示「再穿一次」，客户看不到
+      if (sessionStorage.getItem('rl_admin_token') || me.is_stringer) {
         restringBtn.hidden = false;
         restringBtn.onclick = () => { location.href = `/?racket=${encodeURIComponent(r.uuid)}`; };
       }

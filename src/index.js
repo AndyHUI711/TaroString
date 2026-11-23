@@ -477,6 +477,26 @@ async function stringerOverview(request, env) {
      WHERE j.stringer_id = ?
      ORDER BY j.strung_at DESC, j.id DESC LIMIT 10`,
   ).bind(session.id).all();
+
+  const monthly = await env.DB.prepare(
+    `SELECT strftime('%Y-%m', strung_at) AS month, COUNT(*) AS jobs
+       FROM string_jobs
+      WHERE stringer_id = ?
+      GROUP BY month
+      ORDER BY month DESC
+      LIMIT 12`,
+  ).bind(session.id).all();
+
+  const topRackets = await env.DB.prepare(
+    `SELECT NULLIF(trim(r.racket_brand), '') AS brand, NULLIF(trim(r.racket_model), '') AS model,
+            COUNT(*) AS jobs
+       FROM string_jobs j JOIN rackets r ON r.id = j.racket_id
+      WHERE j.stringer_id = ?
+      GROUP BY r.id
+      ORDER BY jobs DESC, brand COLLATE NOCASE
+      LIMIT 8`,
+  ).bind(session.id).all();
+
   const historicalCount = user.historical_count ?? 0;
   return json({
     historical_count: historicalCount,
@@ -487,6 +507,8 @@ async function stringerOverview(request, env) {
     racket_brands: racketBrands.results,
     string_brands: stringBrands.results,
     recent_jobs: recent.results,
+    monthly: monthly.results,
+    top_rackets: topRackets.results,
   }, 200, { 'cache-control': 'no-store' });
 }
 

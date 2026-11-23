@@ -17,12 +17,37 @@ function renderBrands(element, brands) {
     </div></div>`).join('');
 }
 
+function renderBarChart(container, rows, labelKey, valueKey) {
+  if (!rows.length) {
+    container.innerHTML = `<p class="hint">${escapeHtml(t('overview.empty'))}</p>`;
+    return;
+  }
+  const max = Math.max(...rows.map((r) => Number(r[valueKey]) || 0), 1);
+  const bars = rows.map((r) => {
+    const label = escapeHtml(r[labelKey] || t('overview.unknown'));
+    const value = Number(r[valueKey]) || 0;
+    const width = Math.round((value / max) * 100);
+    return `
+      <div class="bar-row">
+        <div class="bar-label"><span class="bar-name">${label}</span><span class="bar-val">${value}</span></div>
+        <div class="bar-track"><i style="width:${width}%"></i></div>
+      </div>`;
+  }).join('');
+  container.innerHTML = `<div class="bar-chart">${bars}</div>`;
+}
+
 function renderOverview(data) {
   document.getElementById('lifetime-jobs').textContent = data.lifetime_jobs;
   document.getElementById('recorded-jobs').textContent = data.recorded_jobs;
   document.getElementById('recorded-rackets').textContent = data.recorded_rackets;
   document.getElementById('historical-count').textContent = data.historical_count;
   offsetInput.value = data.offset_configured ? data.historical_count : 65;
+  renderBarChart(document.getElementById('monthly-chart'), data.monthly || [], 'month', 'jobs');
+  const topRows = (data.top_rackets || []).map((r) => ({
+    label: [r.brand, r.model].filter(Boolean).join(' ') || t('overview.unknown'),
+    jobs: Number(r.jobs) || 0,
+  }));
+  renderBarChart(document.getElementById('top-chart'), topRows, 'label', 'jobs');
   renderBrands(document.getElementById('racket-brands'), data.racket_brands);
   renderBrands(document.getElementById('string-brands'), data.string_brands);
   const recent = document.getElementById('recent-jobs');
