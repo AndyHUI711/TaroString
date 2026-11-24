@@ -819,6 +819,35 @@ input[type="number"] { -webkit-appearance: none; appearance: textfield; }
   transition: width 0.4s ease;
 }
 
+/* 球线搜尋：5 星評分 */
+.search-item {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.search-item:last-child { border-bottom: none; }
+.search-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.search-head strong { font-size: 15px; }
+.search-meta, .search-extra {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.search-stars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 4px 14px;
+  margin-top: 8px;
+}
+.star-row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.star-label { color: var(--ink-soft); }
+.star-value { color: var(--accent-dark); letter-spacing: 1px; }
+
 /* hidden 属性优先：.notice / .stat-strip 等带 display 的类会盖掉它 */
 [hidden] { display: none !important; }
 

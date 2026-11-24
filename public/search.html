@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>球線搜尋 · 穿線台</title>
+  <meta name="theme-color" content="#f7f5f1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <a class="brand" href="/">
+      <img class="brand-logo" src="/logo.jpg" alt="芋圓穿線 TARO STRINGING" width="56" height="56" />
+    </a>
+    <nav>
+      <a href="/overview" data-i18n="nav.overview">穿線師總覽</a>
+      <a href="/catalog" data-i18n="nav.catalog">球線目錄</a>
+      <a href="/" data-i18n="nav.desk">穿線台</a>
+      <a href="/local" data-i18n="nav.local">本機球拍</a>
+      <a href="/my" data-i18n="nav.my">我的球拍</a>
+      <span id="lang-switch"></span>
+    </nav>
+  </div>
+
+  <main class="wrap">
+    <h1 data-i18n="search.title">球線搜尋</h1>
+    <p class="lead" data-i18n="search.lead">按名稱、材質或最低綜合評分篩選，查看每條線的 5 星性能。</p>
+    <div class="msg" id="search-msg" role="status"></div>
+
+    <form class="card" id="search-form" novalidate>
+      <div class="field">
+        <label for="search-keyword" data-i18n="search.keyword">關鍵字（名稱）</label>
+        <input type="text" id="search-keyword" data-i18n-ph="search.keywordPh" maxlength="80" />
+      </div>
+      <div class="field">
+        <label for="search-material" data-i18n="search.material">材質</label>
+        <select class="select" id="search-material">
+          <option value="" data-i18n="search.materialAll">全部材質</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="search-min-overall" data-i18n="search.minOverall">最低綜合評分</label>
+        <select class="select" id="search-min-overall">
+          <option value="" data-i18n="search.minOverallAny">不限</option>
+          <option value="5">★★★★★</option>
+          <option value="4">★★★★ 以上</option>
+          <option value="3">★★★ 以上</option>
+          <option value="2">★★ 以上</option>
+        </select>
+      </div>
+      <button class="btn" type="submit" data-i18n="search.submit">搜尋</button>
+    </form>
+
+    <section class="card" id="search-result" hidden>
+      <h2 data-i18n="search.resultsTitle">搜尋結果</h2>
+      <div class="hint" id="search-count"></div>
+      <div id="search-list"></div>
+    </section>
+  </main>
+
+  <footer class="site-foot">
+    <div>Licensed © 2026 by Andy</div>
+    <div>Tel: <a href="tel:+85265586847">+852 65586847</a></div>
+  </footer>
+
+  <script src="/i18n.js"></script>
+  <script src="/navigation.js"></script>
+  <script src="/client.js"></script>
+  <script src="/search.js"></script>
+</body>
+</html>

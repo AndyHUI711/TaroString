@@ -525,6 +525,49 @@ async function getCatalog(env) {
   return json({ brands: brands.results, models: models.results });
 }
 
+async function searchStrings(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return fail('BAD_JSON', 400, '请求体必须是 JSON');
+  }
+  const keyword = cleanText(body?.keyword, 80);
+  const material = cleanText(body?.material, 40);
+  const minOverall = Number(body?.min_overall);
+  const limit = Math.min(Math.max(Number(body?.limit) || 50, 1), 200);
+
+  const conditions = [];
+  const params = [];
+  if (keyword) {
+    conditions.push('name LIKE ?');
+    params.push(`%${keyword}%`);
+  }
+  if (material) {
+    conditions.push('material = ?');
+    params.push(material);
+  }
+  if (Number.isInteger(minOverall) && minOverall >= 1 && minOverall <= 5) {
+    conditions.push('overall IS NOT NULL AND overall >= ?');
+    params.push(minOverall);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  params.push(limit);
+
+  const result = await env.DB.prepare(
+    `SELECT name, material, gauge, test_lbs, stiffness, comfort,
+            tension_loss, tension_retention, energy_return, power,
+            spin_potential, spin, s2s_cof, ss_cof_rating, s2b_cof, sb_cof_rating,
+            feel, control_v2, overall
+       FROM string_performance
+      ${where}
+      ORDER BY overall DESC, name COLLATE NOCASE
+      LIMIT ?`,
+  ).bind(...params).all();
+
+  return json({ strings: result.results, count: result.results.length });
+}
+
 async function updateCatalog(request, env, type) {
   const session = await getSession(request, env);
   if (!session || !session.is_stringer) return fail('CATALOG_FORBIDDEN', 403, '请先以穿线师身份登录');
@@ -1136,6 +1179,7 @@ async function handleApi(request, env, url) {
   if (path === '/api/my' && method === 'GET') return listMyRackets(request, env);
   if (path === '/api/overview' && (method === 'GET' || method === 'PUT')) return stringerOverview(request, env);
   if (path === '/api/catalog' && method === 'GET') return getCatalog(env);
+  if (path === '/api/catalog/strings' && method === 'POST') return searchStrings(request, env);
   if (path === '/api/catalog/brands' && method === 'POST') return updateCatalog(request, env, 'brand');
   if (path === '/api/catalog/models' && method === 'POST') return updateCatalog(request, env, 'model');
   if (path === '/api/rackets' && method === 'POST') return createRacket(request, env);
@@ -1173,6 +1217,7 @@ async function handlePage(request, env, url) {
     '/local': '/local.html',
     '/list': '/list.html',
     '/catalog': '/catalog.html',
+    '/search': '/search.html',
     '/overview': '/overview.html',
   };
 
