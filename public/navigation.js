@@ -40,7 +40,8 @@ function mountNavigation() {
 /**
  * 點 logo 的落點依身分而異：
  *   穿線師 -> /（穿線台）
- *   其他人 -> /my（我的球拍）
+ *   已登入客戶 -> /my（我的球拍）
+ *   未登入 -> /（穿線台，不會被導去登入頁）
  * 用 /api/me 判斷，抓不到就保留原本的 /。
  */
 async function updateBrandTarget() {
@@ -49,7 +50,9 @@ async function updateBrandTarget() {
   try {
     const response = await fetch('/api/me', { credentials: 'same-origin' });
     const data = await response.json();
-    brand.setAttribute('href', data && data.is_stringer ? '/' : '/my');
+    const isStringer = Boolean(data && data.is_stringer);
+    const loggedIn = Boolean(data && data.logged_in);
+    brand.setAttribute('href', (isStringer || !loggedIn) ? '/' : '/my');
   } catch {
     /* 忽略：保留預設 href */
   }
