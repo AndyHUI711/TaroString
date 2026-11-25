@@ -14,6 +14,16 @@ const stringMsg = document.getElementById('string-msg');
 const stringReset = document.getElementById('string-reset');
 const ratingFields = document.getElementById('rating-fields');
 
+const compareTray = document.getElementById('compare-tray');
+const compareCount = document.getElementById('compare-count');
+const compareGo = document.getElementById('compare-go');
+const compareClear = document.getElementById('compare-clear');
+const compareSection = document.getElementById('compare-section');
+const compareTable = document.getElementById('compare-table');
+
+const MAX_COMPARE = 4;
+const selected = new Map();
+
 const STAR_FIELDS = [
   { key: 'comfort', label: 'search.comfort' },
   { key: 'tension_retention', label: 'search.tensionRetention' },
@@ -111,6 +121,12 @@ function renderString(s) {
       ${meta ? `<div class="search-meta">${meta}</div>` : ''}
       <div class="search-stars">${rows.join('')}</div>
       ${extra ? `<div class="search-extra">${extra}</div>` : ''}
+      <div class="search-compare">
+        <label class="cmp-check">
+          <input type="checkbox" data-cmp-name="${escapeHtml(s.name)}" ${selected.has(s.name) ? 'checked' : ''} />
+          <span>${escapeHtml(t('compare.add'))}</span>
+        </label>
+      </div>
     </div>`;
 }
 
@@ -273,5 +289,101 @@ stringForm.addEventListener('submit', async (event) => {
     button.disabled = false;
   }
 });
+
+/* -------------------- 比較球線 -------------------- */
+
+const CMP_ROWS = [
+  { label: 'catalog.material', type: 'text', get: (s) => s.material },
+  { label: 'search.gauge', type: 'num', get: (s) => s.gauge, fmt: (v) => `${Number(v).toFixed(2)} mm` },
+  { label: 'search.testLbs', type: 'num', get: (s) => s.test_lbs, fmt: (v) => `${Number(v).toFixed(0)} lbs` },
+  { label: 'search.stiffness', type: 'num', get: (s) => s.stiffness, fmt: (v) => Number(v).toFixed(1) },
+  { label: 'search.comfort', type: 'star', get: (s) => s.comfort, best: 'max' },
+  { label: 'search.tensionRetention', type: 'star', get: (s) => s.tension_retention, best: 'max' },
+  { label: 'search.power', type: 'star', get: (s) => s.power, best: 'max' },
+  { label: 'search.spin', type: 'star', get: (s) => s.spin, best: 'max' },
+  { label: 'search.feel', type: 'star', get: (s) => s.feel, best: 'max' },
+  { label: 'search.control', type: 'star', get: (s) => s.control_v2, best: 'max' },
+  { label: 'search.overall', type: 'star', get: (s) => s.overall, best: 'max' },
+  { label: 'search.tensionLoss', type: 'num', get: (s) => s.tension_loss, fmt: (v) => `${Number(v).toFixed(1)}%`, best: 'min' },
+  { label: 'search.energyReturn', type: 'num', get: (s) => s.energy_return, fmt: (v) => `${Number(v).toFixed(1)}%`, best: 'max' },
+  { label: 'search.spinPotential', type: 'num', get: (s) => s.spin_potential, fmt: (v) => Number(v).toFixed(1), best: 'max' },
+  { label: 'search.s2sCOF', type: 'num', get: (s) => s.s2s_cof, fmt: (v) => Number(v).toFixed(3) },
+  { label: 'search.s2bCOF', type: 'num', get: (s) => s.s2b_cof, fmt: (v) => Number(v).toFixed(3) },
+];
+
+function updateCompareTray() {
+  const n = selected.size;
+  compareTray.hidden = n === 0;
+  compareCount.textContent = t('compare.count', { n });
+  compareGo.disabled = n < 2;
+}
+
+function renderCompare() {
+  const items = [...selected.values()];
+  if (items.length < 2) return;
+  const head = `<tr><th class="cmp-rowlabel"></th>${items.map((s) => `<th>${escapeHtml(s.name)}</th>`).join('')}</tr>`;
+  const body = CMP_ROWS.map((row) => {
+    const values = items.map(row.get);
+    const nums = values
+      .filter((v) => v !== null && v !== undefined && v !== '')
+      .map(Number)
+      .filter((v) => Number.isFinite(v));
+    let bestValue = null;
+    if (row.best === 'max' && nums.length) bestValue = Math.max(...nums);
+    if (row.best === 'min' && nums.length) bestValue = Math.min(...nums);
+    const cells = items.map((s, i) => {
+      const v = values[i];
+      const empty = v === null || v === undefined || v === '';
+      let content;
+      if (empty) content = '—';
+      else if (row.type === 'star') content = stars(v);
+      else if (row.type === 'num') content = row.fmt ? row.fmt(v) : String(v);
+      else content = escapeHtml(String(v));
+      const isBest = !empty && bestValue !== null && Number(v) === bestValue;
+      return `<td class="${isBest ? 'cmp-best' : ''}">${content}</td>`;
+    }).join('');
+    return `<tr><th class="cmp-rowlabel">${escapeHtml(t(row.label))}</th>${cells}</tr>`;
+  }).join('');
+  compareTable.innerHTML = `<table class="cmp-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+searchList.addEventListener('change', (event) => {
+  const box = event.target.closest('[data-cmp-name]');
+  if (!box) return;
+  const name = box.dataset.cmpName;
+  if (box.checked) {
+    if (selected.size >= MAX_COMPARE) {
+      box.checked = false;
+      showMessage(searchMsg, t('compare.max'));
+      return;
+    }
+    const found = allStrings.find((item) => item.name === name);
+    if (found) selected.set(name, found);
+  } else {
+    selected.delete(name);
+  }
+  updateCompareTray();
+  if (!compareSection.hidden) renderCompare();
+});
+
+compareGo.addEventListener('click', () => {
+  if (selected.size < 2) {
+    showMessage(searchMsg, t('compare.needTwo'));
+    return;
+  }
+  renderCompare();
+  compareSection.hidden = false;
+  compareSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+compareClear.addEventListener('click', () => {
+  selected.clear();
+  searchList.querySelectorAll('[data-cmp-name]').forEach((box) => { box.checked = false; });
+  compareSection.hidden = true;
+  compareTable.innerHTML = '';
+  updateCompareTray();
+});
+
+updateCompareTray();
 
 loadAllStrings().then(loadIdentity).then(runSearch);

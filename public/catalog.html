@@ -26,7 +26,7 @@
     <div class="msg" id="catalog-msg" role="status"></div>
 
     <form class="card" id="search-form" novalidate>
-      <h2 data-i18n="search.title">搜尋球線</h2>搜尋球線</h2>
+      <h2 data-i18n="search.title">搜尋球線</h2>
       <div class="field">
         <label for="search-keyword" data-i18n="search.keyword">關鍵字（名稱）</label>
         <input type="text" id="search-keyword" list="string-names" data-i18n-ph="search.keywordPh" maxlength="80" autocomplete="off" />
@@ -61,6 +61,12 @@
       <h2 data-i18n="search.resultsTitle">搜尋結果</h2>
       <div class="hint" id="search-count"></div>
       <div id="search-list"></div>
+    </section>
+
+    <section class="card" id="compare-section" hidden>
+      <h2 data-i18n="compare.title">球線比較</h2>
+      <p class="hint" data-i18n="compare.hint">只列出你勾選的球線；★ 越多越好，綠色標示每列最佳。</p>
+      <div id="compare-table" class="cmp-table-wrap"></div>
     </section>
 
     <p id="catalog-signin" hidden><a href="/login" data-i18n="catalog.signin">穿線師登入後可管理目錄</a></p>
@@ -129,6 +135,15 @@
     <div>Licensed © 2026 by Andy</div>
     <div>Tel: <a href="tel:+85265586847">+852 65586847</a></div>
   </footer>
+
+  <div id="compare-tray" class="cmp-tray" hidden>
+    <span class="cmp-tray-count" id="compare-count"></span>
+    <div class="cmp-tray-actions">
+      <button type="button" class="btn small" id="compare-go" data-i18n="compare.go">比較</button>
+      <button type="button" class="btn ghost small" id="compare-clear" data-i18n="compare.clear">清除</button>
+    </div>
+  </div>
+
   <script src="/i18n.js"></script>
   <script src="/navigation.js"></script>
   <script src="/client.js"></script>

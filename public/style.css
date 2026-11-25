@@ -876,3 +876,59 @@ input[type="number"] { -webkit-appearance: none; appearance: textfield; }
 .who-row.ok { background: #eef5ee; color: #2f6b45; }
 .who-row.tip { background: #f7f2e8; color: #7a6547; }
 .who-row a { margin-left: 6px; }
+
+/* 球線比較 */
+.search-compare { margin-top: 10px; }
+.cmp-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  user-select: none;
+}
+.cmp-check input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+.cmp-tray {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 16px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 24px);
+  padding: 8px 12px 8px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+}
+.cmp-tray[hidden] { display: none; }
+.cmp-tray-count { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.cmp-tray-actions { display: flex; gap: 8px; }
+
+.cmp-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.cmp-table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+.cmp-table th,
+.cmp-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+.cmp-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  font-weight: 600;
+  color: var(--ink);
+}
+.cmp-table .cmp-rowlabel { font-weight: 500; color: var(--ink-soft); }
+.cmp-table td.cmp-best {
+  color: var(--ok);
+  font-weight: 700;
+  background: #eff7f2;
+}
