@@ -133,6 +133,11 @@
         </div>
 
         <div class="field">
+          <label for="rec-brand" data-i18n="search.brand">品牌</label>
+          <select class="select" id="rec-brand"></select>
+        </div>
+
+        <div class="field">
           <label for="rec-material" data-i18n="search.material">材質</label>
           <select class="select" id="rec-material"></select>
         </div>
@@ -160,6 +165,7 @@
   <script src="/navigation.js"></script>
   <script src="/health.js"></script>
   <script src="/client.js"></script>
+  <script src="/whatsnew.js"></script>
   <script>
     const uuid = decodeURIComponent((location.pathname.split('/')[2] || '').trim());
     const MIN_HOURS = 0.5;
@@ -526,6 +532,7 @@
     /* -------------------- AI 選線建議（專家系統） -------------------- */
 
     const recPriority = document.getElementById('rec-priority');
+    const recBrand = document.getElementById('rec-brand');
     const recMaterial = document.getElementById('rec-material');
     const recResults = document.getElementById('rec-results');
     const recMsg = document.getElementById('rec-msg');
@@ -590,6 +597,9 @@
       const mats = [...new Set(recStrings.map((s) => s.material).filter(Boolean))].sort((a, b) => a.localeCompare(b));
       recMaterial.innerHTML = `<option value="">${escapeHtml(t('search.materialAll'))}</option>`
         + mats.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+      const brands = [...new Set(recStrings.map((s) => (s.name || '').split(/\s+/)[0]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      recBrand.innerHTML = `<option value="">${escapeHtml(t('search.brandAll'))}</option>`
+        + brands.map((b) => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('');
     }
 
     function findReference() {
@@ -641,6 +651,7 @@
         return;
       }
       const priority = recPriority.value || 'overall';
+      const brand = recBrand.value;
       const material = recMaterial.value;
       const fb = feedbackProfile((current && current.logs) || []);
       const comfortNeed = (fb.stiff || 0) + (fb.armHurt || 0);
@@ -648,6 +659,7 @@
       const liked = { power: fb.power || 0, control: fb.control || 0, spin: fb.spin || 0, feel: fb.feel || 0, comfort: fb.comfort || 0 };
 
       let pool = recStrings;
+      if (brand) pool = pool.filter((s) => (s.name || '').startsWith(brand));
       if (material) pool = pool.filter((s) => s.material === material);
 
       const scored = pool.map((s) => {
@@ -699,6 +711,7 @@
     renderChips();
     load();
     initRec();
+    mountWhatsNew({ id: 'string-catalog', title: 'wn.catalogTitle', description: 'wn.catalogDesc', button: 'wn.catalogBtn', href: '/catalog', badge: 'wn.badge' });
   </script>
 </body>
 </html>

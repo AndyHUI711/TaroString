@@ -154,6 +154,7 @@
   <script src="/navigation.js"></script>
   <script src="/brands.js"></script>
   <script src="/client.js"></script>
+  <script src="/whatsnew.js"></script>
   <script>
     const TOKEN_KEY = 'rl_admin_token';
     const form = document.getElementById('create-form');
@@ -436,6 +437,7 @@
     loadCatalog();
     if (restringUuid) enterRestringMode(restringUuid);
     renderRecent();
+    mountWhatsNew({ id: 'string-catalog', title: 'wn.catalogTitle', description: 'wn.catalogDesc', button: 'wn.catalogBtn', href: '/catalog', badge: 'wn.badge' });
   </script>
 </body>
 </html>

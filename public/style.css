@@ -936,3 +936,26 @@ input[type="number"] { -webkit-appearance: none; appearance: textfield; }
 /* AI 選線建議結果 */
 .rec-results { margin-top: 12px; }
 .rec-results .search-item:first-child { border-top: 1px solid var(--line); }
+
+/* 新功能提示（可重複使用元件） */
+.whatsnew {
+  position: relative;
+  background: var(--accent-soft);
+  border-color: #e8d9c4;
+}
+.whatsnew .wn-badge { margin-bottom: 6px; }
+.whatsnew .wn-title { margin: 4px 0 6px; }
+.whatsnew .wn-desc { margin: 0 0 14px; font-size: 14px; color: #6a4a28; line-height: 1.55; }
+.whatsnew .wn-cta { width: auto; }
+.wn-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 4px 8px;
+  background: none;
+  border: 0;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ink-soft);
+  cursor: pointer;
+}

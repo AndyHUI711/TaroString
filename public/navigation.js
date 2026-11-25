@@ -37,4 +37,25 @@ function mountNavigation() {
   window.matchMedia('(max-width: 720px)').addEventListener('change', () => setOpen(false));
 }
 
-document.addEventListener('DOMContentLoaded', mountNavigation);
+/**
+ * 點 logo 的落點依身分而異：
+ *   穿線師 -> /（穿線台）
+ *   其他人 -> /my（我的球拍）
+ * 用 /api/me 判斷，抓不到就保留原本的 /。
+ */
+async function updateBrandTarget() {
+  const brand = document.querySelector('.topbar .brand');
+  if (!brand) return;
+  try {
+    const response = await fetch('/api/me', { credentials: 'same-origin' });
+    const data = await response.json();
+    brand.setAttribute('href', data && data.is_stringer ? '/' : '/my');
+  } catch {
+    /* 忽略：保留預設 href */
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  mountNavigation();
+  updateBrandTarget();
+});
