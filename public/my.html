@@ -61,63 +61,94 @@
   <script src="/navigation.js"></script>
   <script src="/client.js"></script>
   <script>
+    // i18n 兜底：i18n.js 沒載入（快取 / 部署不同步）時，t 與格式化函式會 undefined，
+    // 之前 load() 會在 t('my.lead') 那行拋錯，讓頁面永遠卡在「正在讀取…」。
+    // 這裡全部包一層安全呼叫，並用 try/catch 保證 loading 一定會收起來。
+    const tt = (key, vars) => (typeof window.t === 'function' ? window.t(key, vars) : key);
+    const fmtHoursSafe = (v) => (typeof window.fmtHours === 'function' ? window.fmtHours(v) : `${Number(v) || 0} 小時`);
+    const fmtDateSafe = (v) => (typeof window.fmtDateShort === 'function' ? window.fmtDateShort(v) : (v ? String(v).slice(0, 10) : '—'));
+    const lineSafe = (line) => {
+      if (typeof window.lineText === 'function') return window.lineText(line);
+      const name = [line.brand, line.model].filter(Boolean).join(' ');
+      return [name, line.tension != null ? `${line.tension} 磅` : ''].filter(Boolean).join(' · ') || '—';
+    };
+    const escSafe = (s) => (typeof window.escapeHtml === 'function'
+      ? window.escapeHtml(s)
+      : String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+
     async function load() {
-      const res = await api('/api/my');
+      const loading = document.getElementById('loading');
+      try {
+        const res = await api('/api/my');
 
-      if (res.status === 401) {
-        location.href = '/login?next=/my';
-        return;
-      }
+        if (res.status === 401) {
+          location.href = '/login?next=/my';
+          return;
+        }
 
-      if (!res.ok) {
-        document.getElementById('loading').hidden = true;
+        loading.hidden = true;
+
+        if (!res.ok) {
+          document.getElementById('error-box').hidden = false;
+          document.getElementById('error-text').textContent =
+            (typeof window.errText === 'function') ? window.errText(res.data) : ((res.data && res.data.error) || '請稍後重試。');
+          return;
+        }
+
+        const rackets = res.data.rackets || [];
+        document.getElementById('my-lead').textContent =
+          (typeof window.t === 'function')
+            ? window.t('my.lead', { email: res.data.email })
+            : `目前登入：${res.data.email || ''}`;
+
+        const totalHours = rackets.reduce((sum, r) => sum + Number(r.total_hours || 0), 0);
+        const totalLogs = rackets.reduce((sum, r) => sum + Number(r.log_count || 0), 0);
+
+        document.getElementById('total-card').hidden = false;
+        document.getElementById('stat-count').textContent =
+          (typeof window.t === 'function') ? window.t('my.unitCount', { n: rackets.length }) : `${rackets.length} 支`;
+        document.getElementById('stat-hours').textContent = fmtHoursSafe(totalHours);
+        document.getElementById('stat-logs').textContent = String(totalLogs);
+
+        if (!rackets.length) {
+          document.getElementById('empty-box').hidden = false;
+          return;
+        }
+
+        document.getElementById('list-card').hidden = false;
+        document.getElementById('list').innerHTML = rackets.map((r) => {
+          const title = [r.racket_brand, r.racket_model].filter(Boolean).join(' ');
+          const stringText = r.cross_model
+            ? tt('meta.mainCross', {
+                main: lineSafe({ brand: r.main_brand, model: r.main_model, tension: r.main_tension }),
+                cross: lineSafe({ brand: r.cross_brand, model: r.cross_model, tension: r.cross_tension }),
+              })
+            : lineSafe({ brand: r.main_brand, model: r.main_model, tension: r.main_tension });
+          const meta = `${stringText} · ${tt('unit.logs', { n: r.log_count })} · ${fmtDateSafe(r.strung_at)}`;
+
+          return `
+            <a class="item" href="/r/${r.uuid}">
+              <div class="item-title">
+                <strong>${escSafe(title)}</strong>
+                <span class="item-side">${fmtHoursSafe(r.total_hours)}</span>
+              </div>
+              <div class="item-meta">${escSafe(meta)}</div>
+            </a>`;
+        }).join('');
+      } catch (error) {
+        loading.hidden = true;
         document.getElementById('error-box').hidden = false;
-        document.getElementById('error-text').textContent = errText(res.data);
-        return;
+        document.getElementById('error-text').textContent = '網路異常，請稍後重試';
       }
-
-      const rackets = res.data.rackets || [];
-      document.getElementById('loading').hidden = true;
-      document.getElementById('my-lead').textContent = t('my.lead', { email: res.data.email });
-
-      const totalHours = rackets.reduce((sum, r) => sum + Number(r.total_hours || 0), 0);
-      const totalLogs = rackets.reduce((sum, r) => sum + Number(r.log_count || 0), 0);
-
-      document.getElementById('total-card').hidden = false;
-      document.getElementById('stat-count').textContent = t('my.unitCount', { n: rackets.length });
-      document.getElementById('stat-hours').textContent = fmtHours(totalHours);
-      document.getElementById('stat-logs').textContent = String(totalLogs);
-
-      if (!rackets.length) {
-        document.getElementById('empty-box').hidden = false;
-        return;
-      }
-
-      document.getElementById('list-card').hidden = false;
-      document.getElementById('list').innerHTML = rackets.map((r) => {
-        const title = [r.racket_brand, r.racket_model].filter(Boolean).join(' ');
-        const stringText = r.cross_model
-          ? t('meta.mainCross', {
-              main: lineText({ brand: r.main_brand, model: r.main_model, tension: r.main_tension }),
-              cross: lineText({ brand: r.cross_brand, model: r.cross_model, tension: r.cross_tension }),
-            })
-          : lineText({ brand: r.main_brand, model: r.main_model, tension: r.main_tension });
-        const meta = `${stringText} · ${t('unit.logs', { n: r.log_count })} · ${fmtDateShort(r.strung_at)}`;
-
-        return `
-          <a class="item" href="/r/${r.uuid}">
-            <div class="item-title">
-              <strong>${escapeHtml(title)}</strong>
-              <span class="item-side">${fmtHours(r.total_hours)}</span>
-            </div>
-            <div class="item-meta">${escapeHtml(meta)}</div>
-          </a>`;
-      }).join('');
     }
 
     document.getElementById('logout-link').addEventListener('click', async (event) => {
       event.preventDefault();
-      await api('/api/auth/logout', { method: 'POST', body: '{}' });
+      try {
+        await api('/api/auth/logout', { method: 'POST', body: '{}' });
+      } catch (error) {
+        /* 登出失敗也要回登入頁 */
+      }
       location.href = '/login?next=/my';
     });
 

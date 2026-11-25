@@ -770,7 +770,7 @@ const DICT = {
     'search.title': 'String search',
     'search.brand': 'Brand',
     'search.brandAll': 'All brands',
-    'search.lead': 'Filter by name, material or minimum overall rating and see each string's 5-star performance.',
+    'search.lead': 'Filter by name, material or minimum overall rating and see each string\'s 5-star performance.',
     'search.keyword': 'Keyword (name)',
     'search.keywordPh': 'e.g. ALU Power',
     'search.material': 'Material',
