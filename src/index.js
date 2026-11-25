@@ -536,7 +536,7 @@ async function searchStrings(request, env) {
   const brand = cleanText(body?.brand, 40);
   const material = cleanText(body?.material, 40);
   const minOverall = Number(body?.min_overall);
-  const limit = Math.min(Math.max(Number(body?.limit) || 50, 1), 200);
+  const limit = Math.min(Math.max(Number(body?.limit) || 50, 1), 2000);
 
   const conditions = [];
   const params = [];

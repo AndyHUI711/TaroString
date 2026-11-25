@@ -43,6 +43,9 @@ const NUMERIC_FIELDS = [
 
 let canEdit = false;
 let allStrings = [];
+// 名稱 -> 球線物件。搜尋結果（可能含不在前 200 名內的球線）也要進這個索引，
+// 否則篩選材質後勾選的球線找不到物件，比較就出不來。
+const stringIndex = new Map();
 
 /* -------------------- 星級評分下拉（管理表單） -------------------- */
 
@@ -149,6 +152,7 @@ function fillSelect(select, values, allLabel) {
 }
 
 function refreshOptions() {
+  allStrings.forEach((s) => stringIndex.set(s.name, s));
   const materials = [...new Set(allStrings.map((s) => s.material).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const brands = [...new Set(allStrings.map((s) => brandOf(s.name)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   fillSelect(searchMaterial, materials, t('search.materialAll'));
@@ -202,6 +206,7 @@ async function runSearch() {
       return;
     }
     const strings = res.data.strings || [];
+    strings.forEach((s) => stringIndex.set(s.name, s));
     searchResult.hidden = false;
     searchCount.textContent = t('search.count', { n: strings.length });
     if (!strings.length) {
@@ -357,7 +362,7 @@ searchList.addEventListener('change', (event) => {
       showMessage(searchMsg, t('compare.max'));
       return;
     }
-    const found = allStrings.find((item) => item.name === name);
+    const found = stringIndex.get(name) || allStrings.find((item) => item.name === name);
     if (found) selected.set(name, found);
   } else {
     selected.delete(name);
