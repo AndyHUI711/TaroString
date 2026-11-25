@@ -77,10 +77,15 @@
   <script src="/navigation.js"></script>
   <script src="/client.js"></script>
   <script>
-    // 防禦：若 i18n.js 因快取 / 部署不同步而沒載入，t 會 undefined，
-    // 之前送出表單時會在 t('msg.wait') 這行丟 ReferenceError 讓登入壞掉。
-    // 這裡用 tr() 包裝：真正的翻譯函式存在就委派，不存在就原樣回傳 key，登入流程不中斷。
-    const tr = (key, vars) => (typeof window.t === 'function' ? window.t(key, vars) : key);
+    // 防禦：i18n.js 沒載入（t undefined）或版本過舊缺 key（t 回傳 key 本身）時，
+    // 用 fallback 顯示正常文字，避免登入按鈕變成 auth.btnRegister 這種原始 key。
+    const tr = (key, vars, fallback) => {
+      if (typeof window.t === 'function') {
+        const text = window.t(key, vars);
+        if (text !== key) return text;
+      }
+      return fallback != null ? fallback : key;
+    };
     let mode = 'login';
     const form = document.getElementById('auth-form');
     const btn = document.getElementById('auth-btn');
@@ -104,7 +109,7 @@
       button.addEventListener('click', () => {
         mode = button.dataset.mode;
         document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('active', b === button));
-        btn.textContent = mode === 'login' ? tr('auth.btnLogin') : tr('auth.btnRegister');
+        btn.textContent = mode === 'login' ? tr('auth.btnLogin', null, '登入') : tr('auth.btnRegister', null, '註冊');
         pwdEl.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
         pwdHint.hidden = mode === 'login';
         // 帳號名稱與穿線師選項只在註冊時出現
@@ -139,7 +144,7 @@
 
       btn.disabled = true;
       const label = btn.textContent;
-      btn.textContent = tr('msg.wait');
+      btn.textContent = tr('msg.wait', null, '處理中…');
 
       try {
         const payload = { email, password };
