@@ -77,6 +77,10 @@
   <script src="/navigation.js"></script>
   <script src="/client.js"></script>
   <script>
+    // 防禦：若 i18n.js 因快取 / 部署不同步而沒載入，t 會 undefined，
+    // 之前送出表單時會在 t('msg.wait') 這行丟 ReferenceError 讓登入壞掉。
+    // 這裡用 tr() 包裝：真正的翻譯函式存在就委派，不存在就原樣回傳 key，登入流程不中斷。
+    const tr = (key, vars) => (typeof window.t === 'function' ? window.t(key, vars) : key);
     let mode = 'login';
     const form = document.getElementById('auth-form');
     const btn = document.getElementById('auth-btn');
@@ -100,7 +104,7 @@
       button.addEventListener('click', () => {
         mode = button.dataset.mode;
         document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('active', b === button));
-        btn.textContent = mode === 'login' ? t('auth.btnLogin') : t('auth.btnRegister');
+        btn.textContent = mode === 'login' ? tr('auth.btnLogin') : tr('auth.btnRegister');
         pwdEl.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
         pwdHint.hidden = mode === 'login';
         // 帳號名稱與穿線師選項只在註冊時出現
@@ -124,18 +128,18 @@
 
       const email = emailEl.value.trim();
       const password = pwdEl.value;
-      if (!email) return showMessage(msg, t('msg.needEmail'));
-      if (!password) return showMessage(msg, t('msg.needPassword'));
-      if (mode === 'register' && password.length < 6) return showMessage(msg, t('msg.passwordShort'));
+      if (!email) return showMessage(msg, tr('msg.needEmail'));
+      if (!password) return showMessage(msg, tr('msg.needPassword'));
+      if (mode === 'register' && password.length < 6) return showMessage(msg, tr('msg.passwordShort'));
 
       const wantsStringer = mode === 'register' && stringerCheck.checked;
       if (wantsStringer && !stringerToken.value.trim()) {
-        return showMessage(msg, t('msg.needToken'));
+        return showMessage(msg, tr('msg.needToken'));
       }
 
       btn.disabled = true;
       const label = btn.textContent;
-      btn.textContent = t('msg.wait');
+      btn.textContent = tr('msg.wait');
 
       try {
         const payload = { email, password };
@@ -158,7 +162,7 @@
         // 稍等一下，让 Set-Cookie 生效再跳转
         setTimeout(() => { location.href = target; }, 120);
       } catch (error) {
-        showMessage(msg, t('msg.netError'));
+        showMessage(msg, tr('msg.netError'));
       } finally {
         btn.disabled = false;
         btn.textContent = label;

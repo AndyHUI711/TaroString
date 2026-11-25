@@ -533,6 +533,7 @@ async function searchStrings(request, env) {
     return fail('BAD_JSON', 400, '请求体必须是 JSON');
   }
   const keyword = cleanText(body?.keyword, 80);
+  const brand = cleanText(body?.brand, 40);
   const material = cleanText(body?.material, 40);
   const minOverall = Number(body?.min_overall);
   const limit = Math.min(Math.max(Number(body?.limit) || 50, 1), 200);
@@ -542,6 +543,11 @@ async function searchStrings(request, env) {
   if (keyword) {
     conditions.push('name LIKE ?');
     params.push(`%${keyword}%`);
+  }
+  if (brand) {
+    // 品牌是名称的第一个词（资料来自 String.csv），用前缀匹配
+    conditions.push('name LIKE ?');
+    params.push(`${brand}%`);
   }
   if (material) {
     conditions.push('material = ?');
@@ -566,6 +572,89 @@ async function searchStrings(request, env) {
   ).bind(...params).all();
 
   return json({ strings: result.results, count: result.results.length });
+}
+
+/**
+ * 穿线师新增 / 调整一条球线（写入 string_performance，即 String.csv 建库的同一张表）。
+ * 以 name 为唯一键做 upsert：同名胜过就更新，没有就新增。保存后立刻能被 /api/catalog/strings 搜到。
+ */
+async function saveString(request, env) {
+  const session = await getSession(request, env);
+  if (!session || !session.is_stringer) return fail('CATALOG_FORBIDDEN', 403, '请先以穿线师身份登录');
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return fail('BAD_JSON', 400, '请求体必须是 JSON');
+  }
+
+  const name = typeof body?.name === 'string' ? body.name.trim() : '';
+  if (!name || name.length > 120) {
+    return fail('CATALOG_NAME_INVALID', 400, '名称为空或过长');
+  }
+
+  const optionalReal = (value) => {
+    if (value === null || value === undefined || String(value).trim() === '') return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+  const optionalStar = (value) => {
+    if (value === null || value === undefined || String(value).trim() === '') return null;
+    const num = Number(value);
+    return Number.isInteger(num) && num >= 1 && num <= 5 ? num : null;
+  };
+
+  const values = {
+    material: cleanText(body?.material, 40),
+    gauge: optionalReal(body?.gauge),
+    test_lbs: optionalReal(body?.test_lbs),
+    stiffness: optionalReal(body?.stiffness),
+    comfort: optionalStar(body?.comfort),
+    tension_loss: optionalReal(body?.tension_loss),
+    tension_retention: optionalStar(body?.tension_retention),
+    energy_return: optionalReal(body?.energy_return),
+    power: optionalStar(body?.power),
+    spin_potential: optionalReal(body?.spin_potential),
+    spin: optionalStar(body?.spin),
+    s2s_cof: optionalReal(body?.s2s_cof),
+    ss_cof_rating: optionalStar(body?.ss_cof_rating),
+    s2b_cof: optionalReal(body?.s2b_cof),
+    sb_cof_rating: optionalStar(body?.sb_cof_rating),
+    feel: optionalStar(body?.feel),
+    control_v2: optionalStar(body?.control_v2),
+    overall: optionalStar(body?.overall),
+  };
+
+  const saved = await env.DB.prepare(
+    `INSERT INTO string_performance
+       (name, material, gauge, test_lbs, stiffness, comfort, tension_loss,
+        tension_retention, energy_return, power, spin_potential, spin,
+        s2s_cof, ss_cof_rating, s2b_cof, sb_cof_rating, feel, control_v2, overall)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(name) DO UPDATE SET
+       material = excluded.material, gauge = excluded.gauge, test_lbs = excluded.test_lbs,
+       stiffness = excluded.stiffness, comfort = excluded.comfort,
+       tension_loss = excluded.tension_loss, tension_retention = excluded.tension_retention,
+       energy_return = excluded.energy_return, power = excluded.power,
+       spin_potential = excluded.spin_potential, spin = excluded.spin,
+       s2s_cof = excluded.s2s_cof, ss_cof_rating = excluded.ss_cof_rating,
+       s2b_cof = excluded.s2b_cof, sb_cof_rating = excluded.sb_cof_rating,
+       feel = excluded.feel, control_v2 = excluded.control_v2, overall = excluded.overall
+     RETURNING id, name, material, gauge, test_lbs, stiffness, comfort, tension_loss,
+       tension_retention, energy_return, power, spin_potential, spin,
+       s2s_cof, ss_cof_rating, s2b_cof, sb_cof_rating, feel, control_v2, overall`,
+  )
+    .bind(
+      name, values.material, values.gauge, values.test_lbs, values.stiffness,
+      values.comfort, values.tension_loss, values.tension_retention, values.energy_return,
+      values.power, values.spin_potential, values.spin, values.s2s_cof,
+      values.ss_cof_rating, values.s2b_cof, values.sb_cof_rating, values.feel,
+      values.control_v2, values.overall,
+    )
+    .first();
+
+  return json({ string: saved });
 }
 
 async function updateCatalog(request, env, type) {
@@ -1180,6 +1269,7 @@ async function handleApi(request, env, url) {
   if (path === '/api/overview' && (method === 'GET' || method === 'PUT')) return stringerOverview(request, env);
   if (path === '/api/catalog' && method === 'GET') return getCatalog(env);
   if (path === '/api/catalog/strings' && method === 'POST') return searchStrings(request, env);
+  if (path === '/api/catalog/strings/save' && method === 'POST') return saveString(request, env);
   if (path === '/api/catalog/brands' && method === 'POST') return updateCatalog(request, env, 'brand');
   if (path === '/api/catalog/models' && method === 'POST') return updateCatalog(request, env, 'model');
   if (path === '/api/rackets' && method === 'POST') return createRacket(request, env);
@@ -1217,7 +1307,8 @@ async function handlePage(request, env, url) {
     '/local': '/local.html',
     '/list': '/list.html',
     '/catalog': '/catalog.html',
-    '/search': '/search.html',
+    // 搜尋已合併進 /catalog；保留 /search 讓舊連結 / 書籤還能開
+    '/search': '/catalog.html',
     '/overview': '/overview.html',
   };
 

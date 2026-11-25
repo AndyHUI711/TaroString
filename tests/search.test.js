@@ -73,3 +73,49 @@ test('string_performance table is seeded and searchable', async () => {
 
   db.close();
 });
+
+test('stringers can save a string and it becomes searchable', async () => {
+  const db = database();
+  const session = await cookie(true);
+
+  const created = await request(db, '/api/catalog/strings/save', 'POST', {
+    name: 'Test Poly 16',
+    material: 'Polyester',
+    gauge: 1.3,
+    comfort: 3,
+    power: 4,
+    overall: 4,
+  }, session);
+  assert.equal(created.status, 200);
+  assert.equal(created.data.string.name, 'Test Poly 16');
+  assert.equal(created.data.string.overall, 4);
+
+  const found = await request(db, '/api/catalog/strings', 'POST', { keyword: 'Test Poly' });
+  assert.ok(found.data.strings.some((s) => s.name === 'Test Poly 16'));
+
+  // upsert: same name updates instead of duplicating
+  const updated = await request(db, '/api/catalog/strings/save', 'POST', {
+    name: 'Test Poly 16',
+    material: 'Polyester',
+    overall: 5,
+  }, session);
+  assert.equal(updated.status, 200);
+  assert.equal(updated.data.string.overall, 5);
+  const count = db.prepare("SELECT COUNT(*) AS n FROM string_performance WHERE name = 'Test Poly 16'").get();
+  assert.equal(count.n, 1);
+
+  db.close();
+});
+
+test('saving a string requires a stringer account', async () => {
+  const db = database();
+
+  const anon = await request(db, '/api/catalog/strings/save', 'POST', { name: 'Nope 16' });
+  assert.equal(anon.status, 403);
+  assert.equal(anon.data.error_code, 'CATALOG_FORBIDDEN');
+
+  const customer = await request(db, '/api/catalog/strings/save', 'POST', { name: 'Nope 16' }, await cookie(false));
+  assert.equal(customer.status, 403);
+
+  db.close();
+});

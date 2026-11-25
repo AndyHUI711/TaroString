@@ -13,7 +13,6 @@
       <img class="brand-logo" src="/logo.jpg" alt="芋圓穿線 TARO STRINGING" width="56" height="56" />
     </a>
     <nav>
-      <a href="/search" data-i18n="nav.search">球線搜尋</a>
       <a href="/overview" data-i18n="nav.overview">穿線師總覽</a>
       <a href="/" data-i18n="nav.desk">穿線台</a>
       <a href="/local" data-i18n="nav.local">本機球拍</a>
@@ -23,44 +22,106 @@
   </div>
   <main class="wrap">
     <h1 data-i18n="catalog.title">球線目錄</h1>
-    <p class="lead" data-i18n="catalog.lead">查看球線性能；評分由穿線師提供，僅供參考。</p>
+    <p class="lead" data-i18n="catalog.lead">搜尋球線性能；評分由穿線師提供，僅供參考。</p>
     <div class="msg" id="catalog-msg" role="status"></div>
-    <section class="card">
-      <h2 data-i18n="catalog.models">球線與性能</h2>
-      <div id="catalog-list"></div>
+
+    <form class="card" id="search-form" novalidate>
+      <h2 data-i18n="search.title">搜尋球線</h2>搜尋球線</h2>
+      <div class="field">
+        <label for="search-keyword" data-i18n="search.keyword">關鍵字（名稱）</label>
+        <input type="text" id="search-keyword" list="string-names" data-i18n-ph="search.keywordPh" maxlength="80" autocomplete="off" />
+        <datalist id="string-names"></datalist>
+      </div>
+      <div class="field">
+        <label for="search-brand" data-i18n="search.brand">品牌</label>
+        <select class="select" id="search-brand">
+          <option value="" data-i18n="search.brandAll">全部品牌</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="search-material" data-i18n="search.material">材質</label>
+        <select class="select" id="search-material">
+          <option value="" data-i18n="search.materialAll">全部材質</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="search-min-overall" data-i18n="search.minOverall">最低綜合評分</label>
+        <select class="select" id="search-min-overall">
+          <option value="" data-i18n="search.minOverallAny">不限</option>
+          <option value="5">★★★★★</option>
+          <option value="4">★★★★ 以上</option>
+          <option value="3">★★★ 以上</option>
+          <option value="2">★★ 以上</option>
+        </select>
+      </div>
+      <button class="btn" type="submit" data-i18n="search.submit">搜尋</button>
+    </form>
+
+    <section class="card" id="search-result" hidden>
+      <h2 data-i18n="search.resultsTitle">搜尋結果</h2>
+      <div class="hint" id="search-count"></div>
+      <div id="search-list"></div>
     </section>
+
     <p id="catalog-signin" hidden><a href="/login" data-i18n="catalog.signin">穿線師登入後可管理目錄</a></p>
+
     <div id="catalog-admin" hidden>
-      <form class="card" id="brand-form">
-        <h2 data-i18n="catalog.addBrand">新增品牌</h2>
+      <form class="card" id="string-form" novalidate>
+        <h2 data-i18n="catalog.manageTitle">管理球線（穿線師）</h2>
+        <p class="hint" data-i18n="catalog.manageHint">新增或調整球線；以名稱為唯一鍵，同名胜過會更新，儲存後立刻出現在上方搜尋。</p>
+
         <div class="field">
-          <label for="brand-kind" data-i18n="catalog.kind">品牌類型</label>
-          <select class="select" id="brand-kind">
-            <option value="racket" data-i18n="catalog.racketBrand">球拍品牌</option>
-            <option value="string" data-i18n="catalog.stringBrand">球線品牌</option>
-          </select>
+          <label for="s-name" data-i18n="catalog.stringName">球線名稱</label>
+          <input type="text" id="s-name" maxlength="120" required data-i18n-ph="catalog.stringNamePh" placeholder="例：Babolat RPM Blast 16" />
         </div>
+
         <div class="field">
-          <label for="brand-name" data-i18n="catalog.name">名稱</label>
-          <input id="brand-name" maxlength="40" required />
+          <label for="s-material" data-i18n="catalog.material">材質</label>
+          <input type="text" id="s-material" maxlength="40" data-i18n-ph="catalog.materialPh" placeholder="例：Polyester" />
         </div>
-        <button class="btn" type="submit" data-i18n="catalog.addBrand">新增品牌</button>
-        <div class="msg" id="brand-msg" role="status"></div>
-      </form>
-      <form class="card" id="model-form">
-        <h2 data-i18n="catalog.addModel">新增或更新球線</h2>
-        <p class="hint" data-i18n="catalog.ratingHint">評分可留空，或選擇 1–5；同品牌同型號會更新現有評分。</p>
-        <div class="field">
-          <label for="model-brand" data-i18n="catalog.stringBrand">球線品牌</label>
-          <select class="select" id="model-brand" required></select>
+
+        <div class="catalog-ratings">
+          <div class="field">
+            <label for="s-gauge" data-i18n="search.gauge">線徑 (mm)</label>
+            <input type="number" id="s-gauge" step="0.01" min="0" />
+          </div>
+          <div class="field">
+            <label for="s-test_lbs" data-i18n="search.testLbs">測試磅數 (lbs)</label>
+            <input type="number" id="s-test_lbs" step="0.1" min="0" />
+          </div>
+          <div class="field">
+            <label for="s-stiffness" data-i18n="search.stiffness">硬度 (lb/in)</label>
+            <input type="number" id="s-stiffness" step="0.1" min="0" />
+          </div>
+          <div class="field">
+            <label for="s-tension_loss" data-i18n="search.tensionLoss">掉磅 (%)</label>
+            <input type="number" id="s-tension_loss" step="0.1" min="0" />
+          </div>
+          <div class="field">
+            <label for="s-energy_return" data-i18n="search.energyReturn">回彈 (%)</label>
+            <input type="number" id="s-energy_return" step="0.1" min="0" />
+          </div>
+          <div class="field">
+            <label for="s-spin_potential" data-i18n="search.spinPotential">旋轉潛力</label>
+            <input type="number" id="s-spin_potential" step="0.1" min="0" />
+          </div>
+          <div class="field">
+            <label for="s-s2s_cof" data-i18n="search.s2sCOF">線間摩擦</label>
+            <input type="number" id="s-s2s_cof" step="0.001" min="0" />
+          </div>
+          <div class="field">
+            <label for="s-s2b_cof" data-i18n="search.s2bCOF">線球摩擦</label>
+            <input type="number" id="s-s2b_cof" step="0.001" min="0" />
+          </div>
         </div>
-        <div class="field">
-          <label for="model-name" data-i18n="catalog.modelName">球線型號</label>
-          <input id="model-name" maxlength="80" required />
-        </div>
+
         <div class="catalog-ratings" id="rating-fields"></div>
-        <button class="btn" type="submit" data-i18n="catalog.saveModel">儲存球線</button>
-        <div class="msg" id="model-msg" role="status"></div>
+
+        <div class="btn-row">
+          <button class="btn" type="submit" data-i18n="catalog.saveString">儲存球線</button>
+          <button class="btn ghost" type="button" id="string-reset" data-i18n="catalog.resetForm">清空表單</button>
+        </div>
+        <div class="msg" id="string-msg" role="status"></div>
       </form>
     </div>
   </main>
