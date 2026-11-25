@@ -122,6 +122,29 @@
           <p class="hint tiny" data-i18n="adv.foot">由用量、時間、手感與氣溫推算，實際以試打為準</p>
         </div>
       </section>
+
+      <section class="card" id="recommend-card">
+        <h2 data-i18n="rec.title">AI 選線建議</h2>
+        <p class="hint" data-i18n="rec.lead">說出你最想要的，或從目前這根找類似；會一起參考你的使用回饋。</p>
+
+        <div class="field">
+          <label for="rec-priority" data-i18n="rec.priority">最看重</label>
+          <select class="select" id="rec-priority"></select>
+        </div>
+
+        <div class="field">
+          <label for="rec-material" data-i18n="search.material">材質</label>
+          <select class="select" id="rec-material"></select>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn" type="button" id="rec-go" data-i18n="rec.recommend">AI 推薦</button>
+          <button class="btn ghost" type="button" id="rec-similar" data-i18n="rec.similar">找類似目前這根</button>
+        </div>
+        <div class="msg" id="rec-msg" role="status"></div>
+        <div id="rec-results" class="rec-results" hidden></div>
+        <p class="hint tiny" data-i18n="rec.foot">以球線性能資料與你的回饋加權推算，僅供參考。</p>
+      </section>
     </div>
 
     <p class="foot" data-i18n="r.foot">資料保存在這支球拍的檔案裡</p>
@@ -500,9 +523,182 @@
     });
 
 
+    /* -------------------- AI 選線建議（專家系統） -------------------- */
+
+    const recPriority = document.getElementById('rec-priority');
+    const recMaterial = document.getElementById('rec-material');
+    const recResults = document.getElementById('rec-results');
+    const recMsg = document.getElementById('rec-msg');
+    const recGo = document.getElementById('rec-go');
+    const recSimilar = document.getElementById('rec-similar');
+
+    const PRIORITIES = [
+      { key: 'overall', label: 'search.overall' },
+      { key: 'spin', label: 'search.spin' },
+      { key: 'control_v2', label: 'search.control' },
+      { key: 'comfort', label: 'search.comfort' },
+      { key: 'power', label: 'search.power' },
+      { key: 'feel', label: 'search.feel' },
+      { key: 'tension_retention', label: 'search.tensionRetention' },
+    ];
+
+    const SIMILAR_ATTRS = ['comfort', 'power', 'spin', 'feel', 'control_v2', 'overall', 'tension_retention'];
+    let recStrings = [];
+
+    function recStars(value) {
+      if (value === null || value === undefined) return '—';
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 1 || n > 5) return '—';
+      return '★'.repeat(n) + '☆'.repeat(5 - n);
+    }
+
+    function recStarRow(label, value) {
+      return `<div class="star-row"><span class="star-label">${escapeHtml(label)}</span><span class="star-value">${recStars(value)}</span></div>`;
+    }
+
+    function norm(s, key) {
+      const v = Number(s[key]);
+      return Number.isFinite(v) ? Math.max(0, Math.min(5, v)) : null;
+    }
+
+    function priorityLabel(key) {
+      const hit = PRIORITIES.find((p) => p.key === key);
+      return hit ? t(hit.label) : t('search.overall');
+    }
+
+    /** 把使用記錄的 feedback 聚合成需求：stiff/armHurt 多 -> 想更舒適；tensionDrop 多 -> 想更保磅 */
+    function feedbackProfile(logs) {
+      const counts = {};
+      (logs || []).forEach((log) => {
+        String(log.feedback || '').split('|').filter(Boolean).forEach((key) => {
+          counts[key] = (counts[key] || 0) + 1;
+        });
+      });
+      return counts;
+    }
+
+    async function initRec() {
+      recPriority.innerHTML = PRIORITIES
+        .map((p) => `<option value="${p.key}">${escapeHtml(t(p.label))}</option>`)
+        .join('');
+      try {
+        const res = await api('/api/catalog/strings', { method: 'POST', body: JSON.stringify({ keyword: '', limit: 2000 }) });
+        if (res.ok) recStrings = res.data.strings || [];
+      } catch {
+        /* 沒有資料就只顯示空結果 */
+      }
+      const mats = [...new Set(recStrings.map((s) => s.material).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      recMaterial.innerHTML = `<option value="">${escapeHtml(t('search.materialAll'))}</option>`
+        + mats.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+    }
+
+    function findReference() {
+      const name = current && current.racket ? (current.racket.main_model || '') : '';
+      if (!name || !recStrings.length) return null;
+      const lower = name.toLowerCase();
+      return recStrings.find((s) => s.name.toLowerCase() === lower)
+        || recStrings.find((s) => s.name.toLowerCase().includes(lower) || lower.includes(s.name.toLowerCase()))
+        || null;
+    }
+
+    function recItem(s) {
+      const rows = [
+        recStarRow(t('search.overall'), s.overall),
+        recStarRow(t('search.comfort'), s.comfort),
+        recStarRow(t('search.power'), s.power),
+        recStarRow(t('search.spin'), s.spin),
+        recStarRow(t('search.control'), s.control_v2),
+      ];
+      const meta = [
+        s.material ? escapeHtml(s.material) : '',
+        s.gauge ? `${Number(s.gauge).toFixed(2)} mm` : '',
+      ].filter(Boolean).join(' · ');
+      return `
+        <div class="search-item">
+          <div class="search-head">
+            <strong>${escapeHtml(s.name)}</strong>
+            ${s.material ? `<span class="badge">${escapeHtml(s.material)}</span>` : ''}
+          </div>
+          ${meta ? `<div class="search-meta">${meta}</div>` : ''}
+          <div class="search-stars">${rows.join('')}</div>
+        </div>`;
+    }
+
+    function renderRec(items, title) {
+      recResults.hidden = false;
+      if (!items.length) {
+        recResults.innerHTML = `<p class="hint">${escapeHtml(t('rec.empty'))}</p>`;
+        return;
+      }
+      recResults.innerHTML = `<p class="hint">${escapeHtml(title)}</p>` + items.map(recItem).join('');
+    }
+
+    function recommend() {
+      hideMessage(recMsg);
+      if (!recStrings.length) {
+        recResults.hidden = false;
+        recResults.innerHTML = `<p class="hint">${escapeHtml(t('rec.empty'))}</p>`;
+        return;
+      }
+      const priority = recPriority.value || 'overall';
+      const material = recMaterial.value;
+      const fb = feedbackProfile((current && current.logs) || []);
+      const comfortNeed = (fb.stiff || 0) + (fb.armHurt || 0);
+      const tensionNeed = fb.tensionDrop || 0;
+      const liked = { power: fb.power || 0, control: fb.control || 0, spin: fb.spin || 0, feel: fb.feel || 0, comfort: fb.comfort || 0 };
+
+      let pool = recStrings;
+      if (material) pool = pool.filter((s) => s.material === material);
+
+      const scored = pool.map((s) => {
+        let score = 0;
+        const primary = norm(s, priority);
+        if (primary != null) score += primary * 2;
+        const overall = norm(s, 'overall');
+        if (overall != null) score += overall * 0.6;
+        if (comfortNeed) { const c = norm(s, 'comfort'); if (c != null) score += c * Math.min(comfortNeed, 3) * 0.5; }
+        if (tensionNeed) { const tr = norm(s, 'tension_retention'); if (tr != null) score += tr * Math.min(tensionNeed, 3) * 0.4; }
+        Object.keys(liked).forEach((k) => {
+          if (liked[k]) { const v = norm(s, k); if (v != null) score += v * Math.min(liked[k], 3) * 0.3; }
+        });
+        return { s, score };
+      });
+      scored.sort((a, b) => b.score - a.score || (norm(b.s, 'overall') || 0) - (norm(a.s, 'overall') || 0));
+      renderRec(scored.slice(0, 5).map((x) => x.s), t('rec.forPriority', { p: priorityLabel(priority) }));
+    }
+
+    function findSimilar() {
+      hideMessage(recMsg);
+      const ref = findReference();
+      if (!ref) {
+        showMessage(recMsg, t('rec.noCurrent'));
+        return;
+      }
+      const refVec = SIMILAR_ATTRS.map((k) => norm(ref, k));
+      const scored = recStrings
+        .filter((s) => s.name !== ref.name)
+        .map((s) => {
+          let dist = 0;
+          let n = 0;
+          SIMILAR_ATTRS.forEach((k, i) => {
+            const v = norm(s, k);
+            if (refVec[i] != null && v != null) { dist += Math.abs(refVec[i] - v); n += 1; }
+          });
+          if (s.material && ref.material && s.material === ref.material) dist -= 0.5;
+          if (s.gauge != null && ref.gauge != null) dist += Math.abs(Number(s.gauge) - Number(ref.gauge)) * 0.5;
+          return { s, score: n ? dist / n : 99 };
+        });
+      scored.sort((a, b) => a.score - b.score);
+      renderRec(scored.slice(0, 5).map((x) => x.s), t('rec.similarTo', { name: ref.name }));
+    }
+
+    recGo.addEventListener('click', recommend);
+    recSimilar.addEventListener('click', findSimilar);
+
     renderDuration();
     renderChips();
     load();
+    initRec();
   </script>
 </body>
 </html>
